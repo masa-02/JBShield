@@ -136,7 +136,6 @@ If you find this helpful, please cite our work:
       booktitle={Proc. of {USENIX} Security Symposium},
       pages={8215--8234},
       publisher={{USENIX} Association},
-      year= {2025},
       url={https://www.usenix.org/conference/usenixsecurity25/presentation/zhang-shenyi},
 }
 ```
