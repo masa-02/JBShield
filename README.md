@@ -129,6 +129,19 @@ Performance (attack success rate) of `JBShield-M` across different LLMs (see Tab
 If you find this helpful, please cite our work:
 
 ```bibtex
+@inproceedings{zhang2025jbshield,
+      title={JBShield: Defending Large Language Models from Jailbreak Attacks through Activated Concept Analysis and Manipulation}, 
+      author={Shenyi Zhang and Yuchen Zhai and Keyan Guo and Hongxin Hu and Shengnan Guo and Zheng Fang and Lingchen Zhao and Chao Shen and Cong Wang and Qian Wang},
+      year={2025},
+      booktitle={Proc. of {USENIX} Security Symposium},
+      pages={8215--8234},
+      publisher={{USENIX} Association},
+      year= {2025},
+      url={https://www.usenix.org/conference/usenixsecurity25/presentation/zhang-shenyi},
+}
+```
+
+```bibtex
 @misc{zhang2025jbshield,
       title={JBShield: Defending Large Language Models from Jailbreak Attacks through Activated Concept Analysis and Manipulation}, 
       author={Shenyi Zhang and Yuchen Zhai and Keyan Guo and Hongxin Hu and Shengnan Guo and Zheng Fang and Lingchen Zhao and Chao Shen and Cong Wang and Qian Wang},
