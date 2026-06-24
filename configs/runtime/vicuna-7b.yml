@@ -16,3 +16,7 @@ audit:
 detection:
   update_vectors: false
   jailbreaks: [ijp, gcg, saa, autodan, pair, drattack, puzzler, zulu, base64]
+cache:
+  hidden_states: false   # set true to persist per-prompt hidden states under `dir`
+  dir: representations
+  last_k: 5

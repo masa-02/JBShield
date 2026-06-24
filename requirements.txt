@@ -11,3 +11,5 @@ torchvision
 tqdm
 transformers
 pyyaml
+safetensors
+pyarrow

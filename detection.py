@@ -7,6 +7,7 @@ from tqdm import tqdm
 from sklearn.metrics import roc_curve
 
 from audit import write_json, write_jsonl, write_yaml
+from repr_cache import EXTRACTION_VERSION, write_hidden_cache
 from config import model_paths
 from config import path_harmful_test, path_harmless_test, path_harmful_calibration, path_harmless_calibration
 from runtime_config import load_runtime_config
@@ -209,6 +210,16 @@ def detection_judge(model, tokenizer, embeddings1, calibration_embedding, calibr
     return results
 
 
+def _classify_group(name):
+    """Map an embedding group name to (attack_family, label=attack_present)."""
+    if name in ("calibration_harmless", "test_harmless"):
+        return "none", 0
+    if name in ("calibration_harmful", "test_harmful"):
+        return "direct_harmful", 0
+    family = name.replace("calibration_", "").replace("test_", "")
+    return family, 1
+
+
 def detection(
     model_name,
     update_vectors=False,
@@ -221,6 +232,9 @@ def detection(
     model_path=None,
     data_config=None,
     chat_template=None,
+    cache_hidden=False,
+    cache_dir="representations",
+    cache_last_k=5,
 ):
     start_time = time.time()
     jailbreaks = jailbreaks or DEFAULT_JAILBREAKS
@@ -274,8 +288,59 @@ def detection(
     # Embeddings for calibration prompts
     print("Get embeddings for calibration prompts...")
     embedding_audit = {}
+    cache_splits = []
+
+    def _write_cache(name, prompts, embeddings, tail_embeddings, tail_lens):
+        family, label = _classify_group(name)
+        metadata_rows = [
+            {
+                "sample_id": f"{model_name}:{name}:{idx}",
+                "base_request_id": f"{name}:{idx}",
+                "prompt_index": idx,
+                "attack_family": family,
+                "label": label,
+                "tail_len": int(tail_lens[idx]),
+                "prompt_chars": len(prompt),
+            }
+            for idx, prompt in enumerate(prompts)
+        ]
+        split_dir = write_hidden_cache(
+            cache_dir,
+            model_name,
+            name,
+            embeddings,
+            metadata_rows,
+            tail_embeddings=tail_embeddings,
+            extraction_version=EXTRACTION_VERSION,
+        )
+        cache_splits.append({"split": name, "path": str(split_dir), "num_samples": len(prompts)})
 
     def collect_embeddings(name, prompts):
+        if cache_hidden:
+            if audit_log:
+                embeddings, tail_embeddings, tail_lens, audit = get_sentence_embeddings(
+                    prompts,
+                    model,
+                    model_name,
+                    tokenizer,
+                    return_audit=True,
+                    chat_template=chat_template,
+                    last_k=cache_last_k,
+                    return_tail=True,
+                )
+                embedding_audit[name] = audit
+            else:
+                embeddings, tail_embeddings, tail_lens = get_sentence_embeddings(
+                    prompts,
+                    model,
+                    model_name,
+                    tokenizer,
+                    chat_template=chat_template,
+                    last_k=cache_last_k,
+                    return_tail=True,
+                )
+            _write_cache(name, prompts, embeddings, tail_embeddings, tail_lens)
+            return embeddings
         if audit_log:
             embeddings, audit = get_sentence_embeddings(
                 prompts,
@@ -538,6 +603,13 @@ def detection(
         "thresholds": thresholds,
         "metrics": metrics,
         "hidden_state_audit": embedding_audit,
+        "hidden_cache": {
+            "enabled": cache_hidden,
+            "cache_dir": cache_dir if cache_hidden else None,
+            "last_k": cache_last_k if cache_hidden else None,
+            "extraction_version": EXTRACTION_VERSION if cache_hidden else None,
+            "splits": cache_splits,
+        },
     }
     if audit_log:
         write_json(run_dir / "metrics.json", metrics)
@@ -557,6 +629,9 @@ if __name__ == '__main__':
     parser.add_argument('--run-id', type=str, default=None)
     parser.add_argument('--update-vectors', action='store_true')
     parser.add_argument('--jailbreaks', type=str, default=None, help='Comma-separated jailbreak families')
+    parser.add_argument('--cache-hidden', action='store_true', help='Persist per-prompt hidden states')
+    parser.add_argument('--cache-dir', type=str, default=None, help='Root dir for hidden-state cache')
+    parser.add_argument('--cache-last-k', type=int, default=None, help='Trailing tokens to cache')
 
     args = parser.parse_args()
     runtime_config = {}
@@ -569,6 +644,7 @@ if __name__ == '__main__':
     runtime = runtime_config.get("runtime", {})
     audit = runtime_config.get("audit", {})
     detection_config = runtime_config.get("detection", {})
+    cache_config = runtime_config.get("cache", {})
 
     model_name = args.model or model_config.get("name")
     if not model_name:
@@ -581,6 +657,9 @@ if __name__ == '__main__':
     audit_log = bool(args.audit_log or audit.get("enabled", False))
     run_id = args.run_id or audit.get("run_id") or f"{model_name}-gate1"
     update_vectors = bool(args.update_vectors or detection_config.get("update_vectors", False))
+    cache_hidden = bool(args.cache_hidden or cache_config.get("hidden_states", False))
+    cache_dir = args.cache_dir or cache_config.get("dir", "representations")
+    cache_last_k = args.cache_last_k if args.cache_last_k is not None else int(cache_config.get("last_k", 5))
 
     # Run this script to evaluate the detection performance of JBShield-D
     try:
@@ -596,6 +675,9 @@ if __name__ == '__main__':
             model_path=model_config.get("path"),
             data_config=data_config,
             chat_template=model_config.get("chat_template"),
+            cache_hidden=cache_hidden,
+            cache_dir=cache_dir,
+            cache_last_k=cache_last_k,
         )
     except Exception as exc:
         if audit_log:
