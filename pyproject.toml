@@ -1,0 +1,23 @@
+[project]
+name = "jbshield-repro"
+version = "0.1.0"
+description = "JBShield-D reproduction utilities for Sec4AI experiments"
+requires-python = ">=3.10"
+dependencies = [
+  "accelerate",
+  "fschat",
+  "nltk",
+  "numpy",
+  "pandas",
+  "protobuf",
+  "pyyaml",
+  "sentencepiece",
+  "scikit-learn",
+  "torch",
+  "torchvision",
+  "tqdm",
+  "transformers",
+]
+
+[tool.uv]
+package = false

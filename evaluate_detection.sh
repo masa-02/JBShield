@@ -1,5 +1,8 @@
-python detection.py --model mistral > ./logs/JBShield-D_mistral.log
-python detection.py --model llama-2 > ./logs/JBShield-D_llama-2.log
-python detection.py --model llama-3 > ./logs/JBShield-D_llama-3.log
-python detection.py --model vicuna-7b > ./logs/JBShield-D_vicuna-7b.log
-python detection.py --model vicuna-13b > ./logs/JBShield-D_vicuna-13b.log
+set -euo pipefail
+
+LIST_FILE="${1:-configs/runtime/manifests/official.txt}"
+RUN_PREFIX="${2:-gate1-official}"
+OUTPUT_FILE="${3:-logs/JBShield-D_runtime.log}"
+JAILBREAKS="${4:-}"
+
+./scripts/run_detection_config_list.sh "${LIST_FILE}" "${RUN_PREFIX}" "${OUTPUT_FILE}" "${JAILBREAKS}"

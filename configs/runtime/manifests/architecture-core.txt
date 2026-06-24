@@ -1,0 +1,10 @@
+# Core architecture comparison from the internal representation experiment plan.
+configs/runtime/qwen3-8b.yml
+configs/runtime/qwen3-30b-a3b-instruct-2507.yml
+configs/runtime/deepseek-v2-lite-chat.yml
+configs/runtime/moonlight-16b-a3b-instruct.yml
+configs/runtime/qwen3.6-27b.yml
+configs/runtime/gemma-3-12b-it.yml
+configs/runtime/gemma-4-26b-a4b-it.yml
+configs/runtime/llama-3.1-8b-instruct.yml
+configs/runtime/mistral-nemo-instruct-2407.yml

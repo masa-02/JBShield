@@ -1,0 +1,9 @@
+# Domain-adaptation comparison set.
+configs/runtime/qwen2.5-7b-instruct.yml
+configs/runtime/qwen2.5-coder-7b-instruct.yml
+configs/runtime/qwen2.5-14b-instruct.yml
+configs/runtime/qwen2.5-coder-14b-instruct.yml
+configs/runtime/qwen2.5-32b-instruct.yml
+configs/runtime/qwen2.5-coder-32b-instruct.yml
+configs/runtime/deepseek-v2-lite-chat.yml
+configs/runtime/deepseek-coder-v2-lite-instruct.yml

@@ -176,7 +176,7 @@ def get_jailbreak_prompts(model_name, jailbreaks, split="all"):
     return jailbreak_prompts
 
 
-def get_hidden_states(model, model_name, tokenizer, prompt, return_input_ids=False):
+def get_hidden_states(model, model_name, tokenizer, prompt, return_input_ids=False, chat_template=None):
     """
     Get hidden states from the model for a given prompt.
 
@@ -190,7 +190,7 @@ def get_hidden_states(model, model_name, tokenizer, prompt, return_input_ids=Fal
     - hidden_states: The hidden states from the model.
     - input_ids: The input_ids used for the prompt.
     """
-    input_ids = get_input_ids(model, model_name, tokenizer, prompt)
+    input_ids = get_input_ids(model, model_name, tokenizer, prompt, chat_template=chat_template)
     with torch.no_grad():
         hidden_states = model(
             **input_ids, return_dict=True, output_hidden_states=True
@@ -201,7 +201,7 @@ def get_hidden_states(model, model_name, tokenizer, prompt, return_input_ids=Fal
         return input_ids, hidden_states
 
 
-def get_input_ids(model, model_name, tokenizer, prompt):
+def get_input_ids(model, model_name, tokenizer, prompt, chat_template=None):
     """
     Get input_ids for a given prompt.
 
@@ -213,8 +213,24 @@ def get_input_ids(model, model_name, tokenizer, prompt):
     Returns:
     - input_ids: The input_ids used for the prompt.
     """
-    # Fastchat cannot corectly load the chat template for Gemma models
-    conv = get_conversation_template(model_name)
+    if chat_template == "hf":
+        if not hasattr(tokenizer, "apply_chat_template"):
+            raise ValueError(f"Tokenizer for {model_name} does not support apply_chat_template")
+        messages = [{"role": "user", "content": prompt}]
+        input_ids = tokenizer.apply_chat_template(
+            messages,
+            add_generation_prompt=True,
+            return_tensors="pt",
+            tokenize=True,
+        )
+        return {"input_ids": input_ids.to(model.device)}
+
+    if chat_template == "raw":
+        return tokenizer([prompt], return_tensors="pt").to(model.device)
+
+    # Fastchat cannot correctly load the chat template for some newer models.
+    template_name = chat_template or model_name
+    conv = get_conversation_template(template_name)
     conv.append_message(conv.roles[0], prompt)
     conv.append_message(conv.roles[1], None)
     input_ids = tokenizer([conv.get_prompt()], return_tensors="pt").to(model.device)
@@ -222,7 +238,7 @@ def get_input_ids(model, model_name, tokenizer, prompt):
 
 
 def get_output_prompt(
-    model, model_name, tokenizer, prompt, max_new_tokens=200, use_cache=True
+    model, model_name, tokenizer, prompt, max_new_tokens=200, use_cache=True, chat_template=None
 ):
     """
     Get the output prompt for a given prompt.
@@ -236,7 +252,7 @@ def get_output_prompt(
     Returns:
     - output_prompt: The output prompt for the given prompt.
     """
-    input_ids = get_input_ids(model, model_name, tokenizer, prompt)
+    input_ids = get_input_ids(model, model_name, tokenizer, prompt, chat_template=chat_template)
     input_length = input_ids["input_ids"].shape[1]
     if input_length > model.config.max_position_embeddings:
         # Not all models can automatically handle input lengths greater than their max position embeddings
@@ -258,7 +274,7 @@ def get_output_prompt(
     return output_prompt
 
 
-def get_sentence_embeddings(prompts, model, model_name, tokenizer):
+def get_sentence_embeddings(prompts, model, model_name, tokenizer, return_audit=False, chat_template=None, last_k=1, return_tail=False):
     """
     Get sentence embeddings for each layer of the model
 
@@ -266,30 +282,90 @@ def get_sentence_embeddings(prompts, model, model_name, tokenizer):
     - prompts: list of prompts to get embeddings for
     - model: model to get embeddings from
     - tokenizer: tokenizer to use for encoding prompts
+    - last_k: number of trailing token positions to also collect when return_tail is set
+    - return_tail: if True, also return per-prompt last-k token embeddings and tail lengths
 
     Returns:
     (Mean-pooled and weighted mean-pooled embeddings removed.)
-    - embeddings_last_token: list of embeddings for the last token of each prompt for each layer
+    - embeddings_last_token: list (len L+1) of per-prompt last-token embeddings [d]
+    - tail_embeddings (if return_tail): list (len L+1) of per-prompt last-k embeddings [last_k, d],
+      front-padded with zeros when the sequence is shorter than last_k
+    - tail_lens (if return_tail): per-prompt actual number of real trailing tokens (<= last_k)
+    - audit (if return_audit): hidden-state audit metadata
     """
     num_layers = model.config.num_hidden_layers + 1
     embeddings_last_token = [[] for _ in range(num_layers)]
+    tail_embeddings = [[] for _ in range(num_layers)] if return_tail else None
+    tail_lens = [] if return_tail else None
+    hidden_size_cfg = getattr(model.config, "hidden_size", 1024)
+    audit = {
+        "num_prompts": 0,
+        "num_empty_prompts": 0,
+        "num_layers": num_layers,
+        "hidden_size": getattr(model.config, "hidden_size", None),
+        "dtype": None,
+        "device": None,
+        "max_sequence_length": 0,
+        "nonfinite_hidden_state_count": 0,
+        "total_hidden_state_values": 0,
+    }
+    layer_outputs = None
 
     for prompt in tqdm(prompts):
 
         if prompt != "":
-            layer_outputs = get_hidden_states(model, model_name, tokenizer, prompt)
+            layer_outputs = get_hidden_states(
+                model, model_name, tokenizer, prompt, chat_template=chat_template
+            )
         else:
             for i in range(model.config.num_hidden_layers + 1):
-                embeddings_last_token[i].append(torch.zeros(1024).cpu())
+                embeddings_last_token[i].append(torch.zeros(hidden_size_cfg).cpu())
+                if return_tail:
+                    tail_embeddings[i].append(torch.zeros(last_k, hidden_size_cfg).cpu())
+            if return_tail:
+                tail_lens.append(0)
+            audit["num_prompts"] += 1
+            audit["num_empty_prompts"] += 1
             continue
 
+        audit["num_prompts"] += 1
+        seq_len = int(layer_outputs[0].shape[1])
+        tail_len = min(seq_len, last_k)
+        if return_tail:
+            tail_lens.append(tail_len)
         for i, layer_output in enumerate(layer_outputs):
+            if return_audit:
+                detached = layer_output.detach()
+                audit["dtype"] = str(detached.dtype)
+                audit["device"] = str(detached.device)
+                audit["max_sequence_length"] = max(
+                    audit["max_sequence_length"], int(detached.shape[1])
+                )
+                audit["nonfinite_hidden_state_count"] += int(
+                    torch.logical_not(torch.isfinite(detached)).sum().item()
+                )
+                audit["total_hidden_state_values"] += int(detached.numel())
 
             # Last token embedding for the current layer
             embeddings_last_token[i].append(layer_output[:, -1, :].squeeze().cpu())
 
-    del layer_outputs
+            if return_tail:
+                # Trailing last_k token embeddings, front-padded to [last_k, d]
+                tail = layer_output[0, -tail_len:, :].detach().cpu()
+                if tail_len < last_k:
+                    pad = torch.zeros(last_k - tail_len, tail.shape[-1], dtype=tail.dtype)
+                    tail = torch.cat([pad, tail], dim=0)
+                tail_embeddings[i].append(tail)
+
+    if layer_outputs is not None:
+        del layer_outputs
     gc.collect()
+    if return_tail and return_audit:
+        return embeddings_last_token, tail_embeddings, tail_lens, audit
+    if return_tail:
+        return embeddings_last_token, tail_embeddings, tail_lens
+    if return_audit:
+        return embeddings_last_token, audit
     return embeddings_last_token
 
 

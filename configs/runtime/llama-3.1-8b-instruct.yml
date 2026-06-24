@@ -1,0 +1,19 @@
+model:
+  name: llama-3.1-8b-instruct
+  path: meta-llama/Llama-3.1-8B-Instruct
+  chat_template: hf
+data:
+  jailbreak_model_name: llama-3
+  harmful_calibration: data/harmful_calibration.csv
+  harmless_calibration: data/harmless_calibration.csv
+  harmful_test: data/harmful_test.csv
+  harmless_test: data/harmless_test.csv
+runtime:
+  output_dir: result
+  seed: 0
+audit:
+  enabled: true
+  run_id: llama-3.1-8b-instruct-gate1
+detection:
+  update_vectors: false
+  jailbreaks: [ijp, gcg, saa, autodan, pair, drattack, puzzler, zulu, base64]

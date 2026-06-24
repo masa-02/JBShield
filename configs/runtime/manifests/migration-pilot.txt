@@ -1,0 +1,6 @@
+# Gate 3 migration pilot: 7B-12B class models from the experiment procedure.
+configs/runtime/qwen2.5-7b-instruct.yml
+configs/runtime/qwen3-8b.yml
+configs/runtime/llama-3.1-8b-instruct.yml
+configs/runtime/gemma-3-4b-it.yml
+configs/runtime/gemma-3-12b-it.yml

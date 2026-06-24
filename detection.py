@@ -1,16 +1,76 @@
 import argparse
+import time
+from pathlib import Path
 import torch
 import numpy as np
 from tqdm import tqdm
 from sklearn.metrics import roc_curve
 
+from audit import write_json, write_jsonl, write_yaml
 from config import model_paths
 from config import path_harmful_test, path_harmless_test, path_harmful_calibration, path_harmless_calibration
+from runtime_config import load_runtime_config
 from utils import load_model, load_ori_prompts, get_jailbreak_prompts
 from utils import get_sentence_embeddings
 from utils import interpret_difference_matrix
 from utils import cosine_similarity
 
+
+DEFAULT_JAILBREAKS = ["ijp", "gcg", "saa", "autodan", "pair", "drattack", "puzzler", "zulu", "base64"]
+LEGACY_VECTOR_ORDER = ["gcg", "puzzler", "saa", "autodan", "drattack", "pair", "ijp", "base64", "zulu"]
+
+
+def _score_detection(model, tokenizer, embeddings, calibration_embedding, calibration_vector, threshold):
+    labels = []
+    scores = []
+    for embed in embeddings:
+        vec, _ = interpret_difference_matrix(
+            model,
+            tokenizer,
+            embed,
+            calibration_embedding,
+            return_tokens=False,
+        )
+        score = cosine_similarity(vec, calibration_vector).item()
+        scores.append(score)
+        labels.append(1.0 if score >= threshold else 0.0)
+    return labels, scores
+
+
+def _metrics(tp, fp, fn, tn):
+    total = tp + fp + fn + tn
+    precision = tp / (tp + fp) if tp + fp else 0.0
+    recall = tp / (tp + fn) if tp + fn else 0.0
+    f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
+    return {
+        "accuracy": (tp + tn) / total if total else 0.0,
+        "precision": precision,
+        "recall": recall,
+        "f1": f1,
+        "tp": int(tp),
+        "fp": int(fp),
+        "fn": int(fn),
+        "tn": int(tn),
+        "num_samples": int(total),
+    }
+
+
+def _run_dir(output_dir, model_name, run_id):
+    return Path(output_dir) / model_name / "runs" / run_id
+
+
+def _parse_jailbreaks(value):
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return [item.strip() for item in value.split(",") if item.strip()]
+    return list(value)
+
+
+def _validate_jailbreaks(jailbreaks):
+    unknown = [name for name in jailbreaks if name not in DEFAULT_JAILBREAKS]
+    if unknown:
+        raise ValueError(f"Unknown jailbreak family: {unknown}. Supported: {DEFAULT_JAILBREAKS}")
 
 
 def find_critical_layer(embeddings1, embeddings2):
@@ -135,34 +195,69 @@ def find_optimal_threshold(model, tokenizer, calibration_embeddings1, calibratio
     return thershold
 
 
-def detection_judge(model, tokenizer, embeddings1, calibration_embedding, calibration_vector, threshold):
-    results = []
-    for embed in embeddings1:
-        vec, _ = interpret_difference_matrix(
-            model,
-            tokenizer,
-            embed,
-            calibration_embedding,
-            return_tokens=False,
-        )
-        if cosine_similarity(vec, calibration_vector).item() >= threshold:
-            results.append(1.0)
-        else:
-            results.append(0.0)
+def detection_judge(model, tokenizer, embeddings1, calibration_embedding, calibration_vector, threshold, return_scores=False):
+    results, scores = _score_detection(
+        model,
+        tokenizer,
+        embeddings1,
+        calibration_embedding,
+        calibration_vector,
+        threshold,
+    )
+    if return_scores:
+        return results, scores
     return results
 
 
-def detection(model_name, update_vectors=False):
+def detection(
+    model_name,
+    update_vectors=False,
+    jailbreaks=None,
+    output_dir="result",
+    audit_log=False,
+    run_id=None,
+    runtime_config=None,
+    config_path=None,
+    model_path=None,
+    data_config=None,
+    chat_template=None,
+):
+    start_time = time.time()
+    jailbreaks = jailbreaks or DEFAULT_JAILBREAKS
+    _validate_jailbreaks(jailbreaks)
+    run_id = run_id or f"{model_name}-gate1"
+    run_dir = _run_dir(output_dir, model_name, run_id)
+    runtime_config = runtime_config or {}
+    data_config = data_config or {}
+    if audit_log:
+        run_dir.mkdir(parents=True, exist_ok=True)
+        snapshot = runtime_config or {
+            "model": {"name": model_name, "path": model_path},
+            "runtime": {"output_dir": output_dir},
+            "audit": {"enabled": audit_log, "run_id": run_id},
+            "detection": {"jailbreaks": jailbreaks, "update_vectors": update_vectors},
+        }
+        if config_path:
+            snapshot["config_path"] = str(config_path)
+        write_yaml(run_dir / "config_snapshot.yaml", snapshot)
+
     # Load model
-    model, tokenizer = load_model(model_name, model_paths)
+    effective_model_paths = dict(model_paths)
+    if model_path:
+        effective_model_paths[model_name] = model_path
+    model, tokenizer = load_model(model_name, effective_model_paths)
 
     # Load data
     # harmful_prompts, harmless_prompts = load_ori_prompts(path_harmful, path_harmless)
-    _, harmless_prompts_test = load_ori_prompts(path_harmful_test, path_harmless_test)
-    harmful_prompts_calibration, harmless_prompts_calibration = load_ori_prompts(path_harmful_calibration, path_harmless_calibration)
-    jailbreaks = ["ijp", "gcg", "saa", "autodan", "pair", "drattack", "puzzler", "zulu", "base64"]
-    jailbreak_prompts_calibration = get_jailbreak_prompts(model_name, jailbreaks, split="calibration")
-    jailbreak_prompts_test = get_jailbreak_prompts(model_name, jailbreaks, split="test")
+    harmful_test_path = data_config.get("harmful_test", path_harmful_test)
+    harmless_test_path = data_config.get("harmless_test", path_harmless_test)
+    harmful_calibration_path = data_config.get("harmful_calibration", path_harmful_calibration)
+    harmless_calibration_path = data_config.get("harmless_calibration", path_harmless_calibration)
+    _, harmless_prompts_test = load_ori_prompts(harmful_test_path, harmless_test_path)
+    harmful_prompts_calibration, harmless_prompts_calibration = load_ori_prompts(harmful_calibration_path, harmless_calibration_path)
+    jailbreak_model_name = data_config.get("jailbreak_model_name", model_name)
+    jailbreak_prompts_calibration = get_jailbreak_prompts(jailbreak_model_name, jailbreaks, split="calibration")
+    jailbreak_prompts_test = get_jailbreak_prompts(jailbreak_model_name, jailbreaks, split="test")
 
     # Remove for potential data leakage
     # # Get embdddings for prompts
@@ -178,8 +273,26 @@ def detection(model_name, update_vectors=False):
 
     # Embeddings for calibration prompts
     print("Get embeddings for calibration prompts...")
-    calibration_harmless_embeddings = get_sentence_embeddings(harmless_prompts_calibration, model, model_name, tokenizer)
-    calibration_harmful_embeddings = get_sentence_embeddings(harmful_prompts_calibration, model, model_name, tokenizer)
+    embedding_audit = {}
+
+    def collect_embeddings(name, prompts):
+        if audit_log:
+            embeddings, audit = get_sentence_embeddings(
+                prompts,
+                model,
+                model_name,
+                tokenizer,
+                return_audit=True,
+                chat_template=chat_template,
+            )
+            embedding_audit[name] = audit
+            return embeddings
+        return get_sentence_embeddings(
+            prompts, model, model_name, tokenizer, chat_template=chat_template
+        )
+
+    calibration_harmless_embeddings = collect_embeddings("calibration_harmless", harmless_prompts_calibration)
+    calibration_harmful_embeddings = collect_embeddings("calibration_harmful", harmful_prompts_calibration)
     # Mean embeddings for harmful and harmless prompts
     mean_harmful_embedding = []
     mean_harmless_embedding = []
@@ -188,56 +301,38 @@ def detection(model_name, update_vectors=False):
         mean_harmless_embedding.append(torch.mean(torch.stack(calibration_harmless_embeddings[i]), dim=0))
     if update_vectors:
         # Save mean embeddings for harmful and harmless prompts when the first time to run this script
+        (Path("vectors") / model_name).mkdir(parents=True, exist_ok=True)
         torch.save(mean_harmful_embedding, './vectors/{}/mean_harmful_embedding.pt'.format(model_name))
         torch.save(mean_harmless_embedding, './vectors/{}/mean_harmless_embedding.pt'.format(model_name))
 
-    calibration_gcg_embeddings = get_sentence_embeddings(jailbreak_prompts_calibration['gcg'], model, model_name, tokenizer)
-    calibration_puzzler_embeddings = get_sentence_embeddings(jailbreak_prompts_calibration['puzzler'], model, model_name, tokenizer)
-    calibration_saa_embeddings = get_sentence_embeddings(jailbreak_prompts_calibration['saa'], model, model_name, tokenizer)
-    calibration_autodan_embeddings = get_sentence_embeddings(jailbreak_prompts_calibration['autodan'], model, model_name, tokenizer)
-    calibration_drattack_embeddings = get_sentence_embeddings(jailbreak_prompts_calibration['drattack'], model, model_name, tokenizer)
-    calibration_pair_embeddings = get_sentence_embeddings(jailbreak_prompts_calibration['pair'], model, model_name, tokenizer)
-    calibration_ijp_embeddings = get_sentence_embeddings(jailbreak_prompts_calibration['ijp'], model, model_name, tokenizer)
-    calibration_base64_embeddings = get_sentence_embeddings(jailbreak_prompts_calibration['base64'], model, model_name, tokenizer)
-    calibration_zulu_embeddings = get_sentence_embeddings(jailbreak_prompts_calibration['zulu'], model, model_name, tokenizer)
+    calibration_attack_embeddings = {
+        jailbreak: collect_embeddings(
+            f"calibration_{jailbreak}", jailbreak_prompts_calibration[jailbreak]
+        )
+        for jailbreak in jailbreaks
+    }
 
     # Embeddings for test prompts
     print("Get embeddings for test prompts...")
-    test_harmless_embeddings = get_sentence_embeddings(harmless_prompts_test, model, model_name, tokenizer)
+    test_harmless_embeddings = collect_embeddings("test_harmless", harmless_prompts_test)
     # test_harmful_embeddings = get_sentence_embeddings(harmful_prompts_test, model, model_name, tokenizer)
 
-    test_gcg_embeddings = get_sentence_embeddings(jailbreak_prompts_test['gcg'], model, model_name, tokenizer)
-    test_puzzler_embeddings = get_sentence_embeddings(jailbreak_prompts_test['puzzler'], model, model_name, tokenizer)
-    test_saa_embeddings = get_sentence_embeddings(jailbreak_prompts_test['saa'], model, model_name, tokenizer)
-    test_autodan_embeddings = get_sentence_embeddings(jailbreak_prompts_test['autodan'], model, model_name, tokenizer)
-    test_drattack_embeddings = get_sentence_embeddings(jailbreak_prompts_test['drattack'], model, model_name, tokenizer)
-    test_pair_embeddings = get_sentence_embeddings(jailbreak_prompts_test['pair'], model, model_name, tokenizer)
-    test_ijp_embeddings = get_sentence_embeddings(jailbreak_prompts_test['ijp'], model, model_name, tokenizer)
-    test_base64_embeddings = get_sentence_embeddings(jailbreak_prompts_test['base64'], model, model_name, tokenizer)
-    test_zulu_embeddings = get_sentence_embeddings(jailbreak_prompts_test['zulu'], model, model_name, tokenizer)
+    test_attack_embeddings = {
+        jailbreak: collect_embeddings(f"test_{jailbreak}", jailbreak_prompts_test[jailbreak])
+        for jailbreak in jailbreaks
+    }
 
 
     # Find the critical layers
     _, seleced_safety_layer_index = find_critical_layer(calibration_harmful_embeddings, calibration_harmless_embeddings)
     print("Selected layer index for toxic concept detection: {}".format(seleced_safety_layer_index))
-    _, seleced_jailbreak_layer_index_gcg = find_critical_layer(calibration_gcg_embeddings, calibration_harmful_embeddings)
-    _, seleced_jailbreak_layer_index_puzzler = find_critical_layer(calibration_puzzler_embeddings, calibration_harmful_embeddings)
-    _, seleced_jailbreak_layer_index_saa = find_critical_layer(calibration_saa_embeddings, calibration_harmful_embeddings)
-    _, seleced_jailbreak_layer_index_autodan = find_critical_layer(calibration_autodan_embeddings, calibration_harmful_embeddings)
-    _, seleced_jailbreak_layer_index_drattack = find_critical_layer(calibration_drattack_embeddings, calibration_harmful_embeddings)
-    _, seleced_jailbreak_layer_index_pair = find_critical_layer(calibration_pair_embeddings, calibration_harmful_embeddings)
-    _, seleced_jailbreak_layer_index_ijp = find_critical_layer(calibration_ijp_embeddings, calibration_harmful_embeddings)
-    _, seleced_jailbreak_layer_index_base64 = find_critical_layer(calibration_base64_embeddings, calibration_harmful_embeddings)
-    _, seleced_jailbreak_layer_index_zulu = find_critical_layer(calibration_zulu_embeddings, calibration_harmful_embeddings)
-    print("Selected layer index for gcg jailbreak concept detection: {}".format(seleced_jailbreak_layer_index_gcg))
-    print("Selected layer index for puzzler jailbreak concept detection: {}".format(seleced_jailbreak_layer_index_puzzler))
-    print("Selected layer index for saa jailbreak concept detection: {}".format(seleced_jailbreak_layer_index_saa))
-    print("Selected layer index for autodan jailbreak concept detection: {}".format(seleced_jailbreak_layer_index_autodan))
-    print("Selected layer index for drattack jailbreak concept detection: {}".format(seleced_jailbreak_layer_index_drattack))
-    print("Selected layer index for pair jailbreak concept detection: {}".format(seleced_jailbreak_layer_index_pair))
-    print("Selected layer index for ijp jailbreak concept detection: {}".format(seleced_jailbreak_layer_index_ijp))
-    print("Selected layer index for base64 jailbreak concept detection: {}".format(seleced_jailbreak_layer_index_base64))
-    print("Selected layer index for zulu jailbreak concept detection: {}".format(seleced_jailbreak_layer_index_zulu))
+    seleced_jailbreak_layer_indexs = {}
+    for jailbreak in jailbreaks:
+        _, layer_index = find_critical_layer(
+            calibration_attack_embeddings[jailbreak], calibration_harmful_embeddings
+        )
+        seleced_jailbreak_layer_indexs[jailbreak] = layer_index
+        print("Selected layer index for {} jailbreak concept detection: {}".format(jailbreak, layer_index))
     
 
     # Get calibration vectors and thersholds
@@ -250,143 +345,33 @@ def detection(model_name, update_vectors=False):
         return_tokens=False,
     )
 
-    calibration_jailbreak_vector_gcg, delta_jailbreak_gcg = interpret_difference_matrix(
-        model,
-        tokenizer,
-        calibration_gcg_embeddings[seleced_jailbreak_layer_index_gcg],
-        calibration_harmful_embeddings[seleced_jailbreak_layer_index_gcg],
-        return_tokens=False,
-    )
-    delta_jailbreak_gcg = delta_jailbreak_gcg * -1
-
-    calibration_jailbreak_vector_puzzler, delta_jailbreak_puzzler = interpret_difference_matrix(
-        model,
-        tokenizer,
-        calibration_puzzler_embeddings[seleced_jailbreak_layer_index_puzzler],
-        calibration_harmful_embeddings[seleced_jailbreak_layer_index_puzzler],
-        return_tokens=False,
-    )
-    delta_jailbreak_puzzler = delta_jailbreak_puzzler * -1
-
-    calibration_jailbreak_vector_saa, delta_jailbreak_saa = interpret_difference_matrix(
-        model,
-        tokenizer,
-        calibration_saa_embeddings[seleced_jailbreak_layer_index_saa],
-        calibration_harmful_embeddings[seleced_jailbreak_layer_index_saa],
-        return_tokens=False,
-    )
-    delta_jailbreak_saa = delta_jailbreak_saa * -1
-
-    calibration_jailbreak_vector_autodan, delta_jailbreak_autodan = interpret_difference_matrix(
-        model,
-        tokenizer,
-        calibration_autodan_embeddings[seleced_jailbreak_layer_index_autodan],
-        calibration_harmful_embeddings[seleced_jailbreak_layer_index_autodan],
-        return_tokens=False,
-    )
-    delta_jailbreak_autodan = delta_jailbreak_autodan * -1
-
-    calibration_jailbreak_vector_drattack, delta_jailbreak_drattack = interpret_difference_matrix(
-        model,
-        tokenizer,
-        calibration_drattack_embeddings[seleced_jailbreak_layer_index_drattack],
-        calibration_harmful_embeddings[seleced_jailbreak_layer_index_drattack],
-        return_tokens=False,
-    )
-    delta_jailbreak_drattack = delta_jailbreak_drattack * -1
-
-    calibration_jailbreak_vector_pair, delta_jailbreak_pair = interpret_difference_matrix(
-        model,
-        tokenizer,
-        calibration_pair_embeddings[seleced_jailbreak_layer_index_pair],
-        calibration_harmful_embeddings[seleced_jailbreak_layer_index_pair],
-        return_tokens=False,
-    )
-    delta_jailbreak_pair = delta_jailbreak_pair * -1
-
-    calibration_jailbreak_vector_ijp, delta_jailbreak_ijp = interpret_difference_matrix(
-        model,
-        tokenizer,
-        calibration_ijp_embeddings[seleced_jailbreak_layer_index_ijp],
-        calibration_harmful_embeddings[seleced_jailbreak_layer_index_ijp],
-        return_tokens=False,
-    )
-    delta_jailbreak_ijp = delta_jailbreak_ijp * -1
-
-    calibration_jailbreak_vector_base64, delta_jailbreak_base64 = interpret_difference_matrix(
-        model,
-        tokenizer,
-        calibration_base64_embeddings[seleced_jailbreak_layer_index_base64],
-        calibration_harmful_embeddings[seleced_jailbreak_layer_index_base64],
-        return_tokens=False,
-    )
-    delta_jailbreak_base64 = delta_jailbreak_base64 * -1
-
-    calibration_jailbreak_vector_zulu, delta_jailbreak_zulu = interpret_difference_matrix(
-        model,
-        tokenizer,
-        calibration_zulu_embeddings[seleced_jailbreak_layer_index_zulu],
-        calibration_harmful_embeddings[seleced_jailbreak_layer_index_zulu],
-        return_tokens=False,
-    )
-    delta_jailbreak_zulu = delta_jailbreak_zulu * -1
-
-
-    calibration_embeddings = [
-        calibration_ijp_embeddings,
-        calibration_gcg_embeddings,
-        calibration_saa_embeddings,
-        calibration_autodan_embeddings,
-        calibration_pair_embeddings,
-        calibration_drattack_embeddings,
-        calibration_puzzler_embeddings,
-        calibration_zulu_embeddings,
-        calibration_base64_embeddings,
-    ]
-    test_embeddings = [
-        test_ijp_embeddings,
-        test_gcg_embeddings,
-        test_saa_embeddings,
-        test_autodan_embeddings,
-        test_pair_embeddings,
-        test_drattack_embeddings,
-        test_puzzler_embeddings,
-        test_zulu_embeddings,
-        test_base64_embeddings,
-    ]
-    calibration_jailbreak_vectors = [
-        calibration_jailbreak_vector_ijp,
-        calibration_jailbreak_vector_gcg,
-        calibration_jailbreak_vector_saa,
-        calibration_jailbreak_vector_autodan,
-        calibration_jailbreak_vector_pair,
-        calibration_jailbreak_vector_drattack,
-        calibration_jailbreak_vector_puzzler,
-        calibration_jailbreak_vector_zulu,
-        calibration_jailbreak_vector_base64,
-    ]
-    seleced_jailbreak_layer_indexs = [
-        seleced_jailbreak_layer_index_ijp,
-        seleced_jailbreak_layer_index_gcg,
-        seleced_jailbreak_layer_index_saa,
-        seleced_jailbreak_layer_index_autodan,
-        seleced_jailbreak_layer_index_pair,
-        seleced_jailbreak_layer_index_drattack,
-        seleced_jailbreak_layer_index_puzzler,
-        seleced_jailbreak_layer_index_zulu,
-        seleced_jailbreak_layer_index_base64,
-    ]
+    calibration_jailbreak_vectors = {}
+    delta_jailbreaks = {}
+    for jailbreak in jailbreaks:
+        layer_index = seleced_jailbreak_layer_indexs[jailbreak]
+        calibration_vector, delta_jailbreak = interpret_difference_matrix(
+            model,
+            tokenizer,
+            calibration_attack_embeddings[jailbreak][layer_index],
+            calibration_harmful_embeddings[layer_index],
+            return_tokens=False,
+        )
+        calibration_jailbreak_vectors[jailbreak] = calibration_vector
+        delta_jailbreaks[jailbreak] = delta_jailbreak * -1
 
     # Evaluate the jailbreak detection
     print("Evaluate the jailbreak detection...")
     ## For transfer attack
     # for idx_calibration in tqdm(range(len(jailbreaks))):
     #     for idx_test in range(len(jailbreaks)):
-    for idx_calibration in tqdm(range(len(jailbreaks))):
-        idx_test = idx_calibration
-        print("Calibration data from : ", jailbreaks[idx_calibration], "- Test data from : ", jailbreaks[idx_test])
-        calibration_embedding = calibration_embeddings[idx_calibration]
-        test_embedding = test_embeddings[idx_test]
+    metrics_by_attack = {}
+    sample_records = []
+    totals = {"tp": 0.0, "fp": 0.0, "fn": 0.0, "tn": 0.0}
+    thresholds = {}
+    for jailbreak in tqdm(jailbreaks):
+        print("Calibration data from : ", jailbreak, "- Test data from : ", jailbreak)
+        calibration_embedding = calibration_attack_embeddings[jailbreak]
+        test_embedding = test_attack_embeddings[jailbreak]
         labels_jb = []
         labels_harmless = []
         # Find the optimal threshold for the jailbreak detection
@@ -401,127 +386,229 @@ def detection(model_name, update_vectors=False):
         thershold_jailbreak = find_optimal_threshold(
             model,
             tokenizer,
-            calibration_embedding[seleced_jailbreak_layer_indexs[idx_calibration]],
-            calibration_harmful_embeddings[seleced_jailbreak_layer_indexs[idx_calibration]],
-            mean_harmful_embedding[seleced_jailbreak_layer_indexs[idx_calibration]],
-            calibration_jailbreak_vectors[idx_calibration],
+            calibration_embedding[seleced_jailbreak_layer_indexs[jailbreak]],
+            calibration_harmful_embeddings[seleced_jailbreak_layer_indexs[jailbreak]],
+            mean_harmful_embedding[seleced_jailbreak_layer_indexs[jailbreak]],
+            calibration_jailbreak_vectors[jailbreak],
         )
+        thresholds[jailbreak] = {
+            "toxic": thershold_safety,
+            "jailbreak": thershold_jailbreak,
+        }
         if update_vectors:
             # Save thersholds for mitigation when the first time to run this script
-            if idx_calibration == idx_test:
-                torch.save(thershold_safety, './vectors/{}/thershold_safety_{}.pt'.format(model_name, jailbreaks[idx_calibration]))
-                torch.save(thershold_jailbreak, './vectors/{}/thershold_jailbreak_{}.pt'.format(model_name, jailbreaks[idx_calibration]))
+            torch.save(thershold_safety, './vectors/{}/thershold_safety_{}.pt'.format(model_name, jailbreak))
+            torch.save(thershold_jailbreak, './vectors/{}/thershold_jailbreak_{}.pt'.format(model_name, jailbreak))
         # Detect the jailbreak prompts
         print("Num of test jailbreak prompts: ", len(test_embedding[seleced_safety_layer_index]))
-        results_safety = detection_judge(
+        results_safety, scores_safety = detection_judge(
             model,
             tokenizer,
             test_embedding[seleced_safety_layer_index],
             mean_harmless_embedding[seleced_safety_layer_index],
             calibration_safety_vector,
             thershold_safety,
+            return_scores=True,
         )
-        results_jailbreak = detection_judge(
+        results_jailbreak, scores_jailbreak = detection_judge(
             model,
             tokenizer,
-            test_embedding[seleced_jailbreak_layer_indexs[idx_calibration]],
-            mean_harmful_embedding[seleced_jailbreak_layer_indexs[idx_calibration]],
-            calibration_jailbreak_vectors[idx_calibration],
+            test_embedding[seleced_jailbreak_layer_indexs[jailbreak]],
+            mean_harmful_embedding[seleced_jailbreak_layer_indexs[jailbreak]],
+            calibration_jailbreak_vectors[jailbreak],
             thershold_jailbreak,
+            return_scores=True,
         )
         # Detect the harmless prompts
         print("Num of test harmless prompts: ", len(test_harmless_embeddings[seleced_safety_layer_index][:len(test_embedding[seleced_safety_layer_index])]))
-        results_harmless_safety = detection_judge(
+        results_harmless_safety, scores_harmless_safety = detection_judge(
             model,
             tokenizer,
             test_harmless_embeddings[seleced_safety_layer_index][:len(test_embedding[seleced_safety_layer_index])],
             mean_harmless_embedding[seleced_safety_layer_index],
             calibration_safety_vector,
             thershold_safety,
+            return_scores=True,
         )
-        results_harmless_jailbreak = detection_judge(
+        results_harmless_jailbreak, scores_harmless_jailbreak = detection_judge(
             model,
             tokenizer,
-            test_harmless_embeddings[seleced_jailbreak_layer_indexs[idx_calibration]][:len(test_embedding[seleced_jailbreak_layer_indexs[idx_calibration]])],
-            mean_harmful_embedding[seleced_jailbreak_layer_indexs[idx_calibration]],
-            calibration_jailbreak_vectors[idx_calibration],
+            test_harmless_embeddings[seleced_jailbreak_layer_indexs[jailbreak]][:len(test_embedding[seleced_jailbreak_layer_indexs[jailbreak]])],
+            mean_harmful_embedding[seleced_jailbreak_layer_indexs[jailbreak]],
+            calibration_jailbreak_vectors[jailbreak],
             thershold_jailbreak,
+            return_scores=True,
         )
         # If result_safety and result_jailbreak are all 1.0, this prompt is judged as jailbreak
-        for result_safety, result_jailbreak in zip(results_safety, results_jailbreak):
-            if result_safety == 1.0 and result_jailbreak == 1.0:
-                labels_jb.append(1.0)
-            else:
-                labels_jb.append(0.0)
-        for result_safety, result_jailbreak in zip(results_harmless_safety, results_harmless_jailbreak):
-            if result_safety == 1.0 and result_jailbreak == 1.0:
-                labels_harmless.append(1.0)
-            else:
-                labels_harmless.append(0.0)
+        for idx, (result_safety, result_jailbreak, score_safety, score_jailbreak) in enumerate(zip(results_safety, results_jailbreak, scores_safety, scores_jailbreak)):
+            prediction = 1.0 if result_safety == 1.0 and result_jailbreak == 1.0 else 0.0
+            labels_jb.append(prediction)
+            if audit_log:
+                sample_records.append({
+                    "id": f"{model_name}:{jailbreak}:test:jailbreak:{idx}",
+                    "split": "test",
+                    "attack_family": jailbreak,
+                    "label": 1,
+                    "toxic_score": score_safety,
+                    "jailbreak_score": score_jailbreak,
+                    "prediction": int(prediction),
+                    "thresholds": thresholds[jailbreak],
+                    "layers": {
+                        "toxic": seleced_safety_layer_index,
+                        "jailbreak": seleced_jailbreak_layer_indexs[jailbreak],
+                    },
+                })
+        for idx, (result_safety, result_jailbreak, score_safety, score_jailbreak) in enumerate(zip(results_harmless_safety, results_harmless_jailbreak, scores_harmless_safety, scores_harmless_jailbreak)):
+            prediction = 1.0 if result_safety == 1.0 and result_jailbreak == 1.0 else 0.0
+            labels_harmless.append(prediction)
+            if audit_log:
+                sample_records.append({
+                    "id": f"{model_name}:{jailbreak}:test:harmless:{idx}",
+                    "split": "test",
+                    "attack_family": jailbreak,
+                    "label": 0,
+                    "toxic_score": score_safety,
+                    "jailbreak_score": score_jailbreak,
+                    "prediction": int(prediction),
+                    "thresholds": thresholds[jailbreak],
+                    "layers": {
+                        "toxic": seleced_safety_layer_index,
+                        "jailbreak": seleced_jailbreak_layer_indexs[jailbreak],
+                    },
+                })
         tp = sum(labels_jb)
         fp = sum(labels_harmless)
         fn = len(labels_jb) - tp
         tn = len(labels_harmless) - fp
-        if tp + fp != 0 and tp != 0:    
-            accuracy = (tp + tn) / (len(labels_jb) + len(labels_harmless))
-            precision = tp / (tp + fp)
-            recall = tp / (tp + fn)
-            f1 = 2 * precision * recall / (precision + recall)
-        else:
-            accuracy = (tp + tn) / (len(labels_jb) + len(labels_harmless))
-            f1 = 0
+        totals["tp"] += tp
+        totals["fp"] += fp
+        totals["fn"] += fn
+        totals["tn"] += tn
+        family_metrics = _metrics(tp, fp, fn, tn)
+        family_metrics["thresholds"] = thresholds[jailbreak]
+        family_metrics["layers"] = {
+            "toxic": seleced_safety_layer_index,
+            "jailbreak": seleced_jailbreak_layer_indexs[jailbreak],
+        }
+        metrics_by_attack[jailbreak] = family_metrics
+        accuracy = family_metrics["accuracy"]
+        f1 = family_metrics["f1"]
         print("Accuracy: {}".format(accuracy), " | F1 score: {}".format(f1))
 
-        if update_vectors:
-            # Save vectors for mitigation when the first time to run this script
-            layer_indexs = [seleced_safety_layer_index, seleced_jailbreak_layer_index_gcg, seleced_jailbreak_layer_index_puzzler, seleced_jailbreak_layer_index_saa, seleced_jailbreak_layer_index_autodan, seleced_jailbreak_layer_index_drattack, seleced_jailbreak_layer_index_pair, seleced_jailbreak_layer_index_ijp, seleced_jailbreak_layer_index_base64, seleced_jailbreak_layer_index_zulu]
-            torch.save(layer_indexs, './vectors/{}/layer_indexs.pt'.format(model_name))    
-        
-            torch.save(delta_jailbreak_gcg, './vectors/{}/delta_jailbreak_gcg.pt'.format(model_name))
-            torch.save(delta_jailbreak_puzzler, './vectors/{}/delta_jailbreak_puzzler.pt'.format(model_name))
-            torch.save(delta_jailbreak_saa, './vectors/{}/delta_jailbreak_saa.pt'.format(model_name))
-            torch.save(delta_jailbreak_autodan, './vectors/{}/delta_jailbreak_autodan.pt'.format(model_name))
-            torch.save(delta_jailbreak_drattack, './vectors/{}/delta_jailbreak_drattack.pt'.format(model_name))
-            torch.save(delta_jailbreak_pair, './vectors/{}/delta_jailbreak_pair.pt'.format(model_name))
-            torch.save(delta_jailbreak_ijp, './vectors/{}/delta_jailbreak_ijp.pt'.format(model_name))
-            torch.save(delta_jailbreak_base64, './vectors/{}/delta_jailbreak_base64.pt'.format(model_name))
-            torch.save(delta_jailbreak_zulu, './vectors/{}/delta_jailbreak_zulu.pt'.format(model_name))
-            torch.save(delta_safety, './vectors/{}/delta_safety.pt'.format(model_name))
-        
-            torch.save(calibration_harmful_embeddings[seleced_jailbreak_layer_index_gcg], './vectors/{}/calibration_harmful_embedding_gcg.pt'.format(model_name))
-            torch.save(calibration_harmful_embeddings[seleced_jailbreak_layer_index_puzzler], './vectors/{}/calibration_harmful_embedding_puzzler.pt'.format(model_name))
-            torch.save(calibration_harmful_embeddings[seleced_jailbreak_layer_index_saa], './vectors/{}/calibration_harmful_embedding_saa.pt'.format(model_name))
-            torch.save(calibration_harmful_embeddings[seleced_jailbreak_layer_index_autodan], './vectors/{}/calibration_harmful_embedding_autodan.pt'.format(model_name))
-            torch.save(calibration_harmful_embeddings[seleced_jailbreak_layer_index_drattack], './vectors/{}/calibration_harmful_embedding_drattack.pt'.format(model_name))
-            torch.save(calibration_harmful_embeddings[seleced_jailbreak_layer_index_pair], './vectors/{}/calibration_harmful_embedding_pair.pt'.format(model_name))
-            torch.save(calibration_harmful_embeddings[seleced_jailbreak_layer_index_ijp], './vectors/{}/calibration_harmful_embedding_ijp.pt'.format(model_name))
-            torch.save(calibration_harmful_embeddings[seleced_jailbreak_layer_index_base64], './vectors/{}/calibration_harmful_embedding_base64.pt'.format(model_name))
-            torch.save(calibration_harmful_embeddings[seleced_jailbreak_layer_index_zulu], './vectors/{}/calibration_harmful_embedding_zulu.pt'.format(model_name))
-            torch.save(calibration_harmless_embeddings[seleced_safety_layer_index], './vectors/{}/calibration_harmless_embedding.pt'.format(model_name))
-        
-            torch.save(calibration_safety_vector, './vectors/{}/calibration_safety_vector.pt'.format(model_name))
-            torch.save(calibration_jailbreak_vector_gcg, './vectors/{}/calibration_jailbreak_vector_gcg.pt'.format(model_name))
-            torch.save(calibration_jailbreak_vector_puzzler, './vectors/{}/calibration_jailbreak_vector_puzzler.pt'.format(model_name))
-            torch.save(calibration_jailbreak_vector_saa, './vectors/{}/calibration_jailbreak_vector_saa.pt'.format(model_name))
-            torch.save(calibration_jailbreak_vector_autodan, './vectors/{}/calibration_jailbreak_vector_autodan.pt'.format(model_name))
-            torch.save(calibration_jailbreak_vector_drattack, './vectors/{}/calibration_jailbreak_vector_drattack.pt'.format(model_name))
-            torch.save(calibration_jailbreak_vector_pair, './vectors/{}/calibration_jailbreak_vector_pair.pt'.format(model_name))
-            torch.save(calibration_jailbreak_vector_ijp, './vectors/{}/calibration_jailbreak_vector_ijp.pt'.format(model_name))
-            torch.save(calibration_jailbreak_vector_base64, './vectors/{}/calibration_jailbreak_vector_base64.pt'.format(model_name))
-            torch.save(calibration_jailbreak_vector_zulu, './vectors/{}/calibration_jailbreak_vector_zulu.pt'.format(model_name))
+    if update_vectors:
+        # Save vectors for mitigation when the first time to run this script.
+        vector_dir = Path("vectors") / model_name
+        vector_dir.mkdir(parents=True, exist_ok=True)
+        layer_indexs = [seleced_safety_layer_index] + [
+            seleced_jailbreak_layer_indexs[jailbreak]
+            for jailbreak in LEGACY_VECTOR_ORDER
+            if jailbreak in seleced_jailbreak_layer_indexs
+        ]
+        torch.save(layer_indexs, vector_dir / "layer_indexs.pt")
+        torch.save(delta_safety, vector_dir / "delta_safety.pt")
+        torch.save(calibration_harmless_embeddings[seleced_safety_layer_index], vector_dir / "calibration_harmless_embedding.pt")
+        torch.save(calibration_safety_vector, vector_dir / "calibration_safety_vector.pt")
+        for jailbreak in jailbreaks:
+            layer_index = seleced_jailbreak_layer_indexs[jailbreak]
+            torch.save(delta_jailbreaks[jailbreak], vector_dir / f"delta_jailbreak_{jailbreak}.pt")
+            torch.save(calibration_harmful_embeddings[layer_index], vector_dir / f"calibration_harmful_embedding_{jailbreak}.pt")
+            torch.save(calibration_jailbreak_vectors[jailbreak], vector_dir / f"calibration_jailbreak_vector_{jailbreak}.pt")
+
+    overall = _metrics(totals["tp"], totals["fp"], totals["fn"], totals["tn"])
+    overall["macro_f1"] = float(np.mean([m["f1"] for m in metrics_by_attack.values()])) if metrics_by_attack else 0.0
+    metrics = {
+        "model": model_name,
+        "run_id": run_id,
+        "overall": overall,
+        "by_attack_family": metrics_by_attack,
+    }
+    summary = {
+        "status": "success",
+        "model": model_name,
+        "model_path": effective_model_paths.get(model_name),
+        "chat_template": chat_template,
+        "jailbreak_model_name": jailbreak_model_name,
+        "run_id": run_id,
+        "elapsed_seconds": time.time() - start_time,
+        "jailbreaks": jailbreaks,
+        "critical_layers": {
+            "toxic": seleced_safety_layer_index,
+            "jailbreak": seleced_jailbreak_layer_indexs,
+        },
+        "thresholds": thresholds,
+        "metrics": metrics,
+        "hidden_state_audit": embedding_audit,
+    }
+    if audit_log:
+        write_json(run_dir / "metrics.json", metrics)
+        write_json(run_dir / "summary.json", summary)
+        write_jsonl(run_dir / "samples.jsonl", sample_records)
+    return metrics
 
 
 
 if __name__ == '__main__':
     # Get parameters
     parser = argparse.ArgumentParser(description='JBShield-D')
-    parser.add_argument('--model', type=str, help='Taregt model')
+    parser.add_argument('--model', type=str, default=None, help='Target model')
+    parser.add_argument('--config', type=str, default=None, help='Runtime YAML config')
+    parser.add_argument('--output-dir', type=str, default=None)
+    parser.add_argument('--audit-log', action='store_true')
+    parser.add_argument('--run-id', type=str, default=None)
+    parser.add_argument('--update-vectors', action='store_true')
+    parser.add_argument('--jailbreaks', type=str, default=None, help='Comma-separated jailbreak families')
 
     args = parser.parse_args()
-    model_name = args.model
+    runtime_config = {}
+    config_path = None
+    if args.config:
+        runtime_config, config_path = load_runtime_config(args.config)
+
+    model_config = runtime_config.get("model", {})
+    data_config = runtime_config.get("data", {})
+    runtime = runtime_config.get("runtime", {})
+    audit = runtime_config.get("audit", {})
+    detection_config = runtime_config.get("detection", {})
+
+    model_name = args.model or model_config.get("name")
+    if not model_name:
+        parser.error("Set --model or model.name in --config")
+
+    jailbreaks = _parse_jailbreaks(args.jailbreaks)
+    if jailbreaks is None:
+        jailbreaks = _parse_jailbreaks(detection_config.get("jailbreaks")) or DEFAULT_JAILBREAKS
+    output_dir = args.output_dir or runtime.get("output_dir", "result")
+    audit_log = bool(args.audit_log or audit.get("enabled", False))
+    run_id = args.run_id or audit.get("run_id") or f"{model_name}-gate1"
+    update_vectors = bool(args.update_vectors or detection_config.get("update_vectors", False))
 
     # Run this script to evaluate the detection performance of JBShield-D
-    detection(model_name)
+    try:
+        detection(
+            model_name,
+            update_vectors=update_vectors,
+            jailbreaks=jailbreaks,
+            output_dir=output_dir,
+            audit_log=audit_log,
+            run_id=run_id,
+            runtime_config=runtime_config,
+            config_path=config_path,
+            model_path=model_config.get("path"),
+            data_config=data_config,
+            chat_template=model_config.get("chat_template"),
+        )
+    except Exception as exc:
+        if audit_log:
+            failure_dir = _run_dir(output_dir, model_name, run_id)
+            write_json(failure_dir / "summary.json", {
+                "status": "failed",
+                "model": model_name,
+                "run_id": run_id,
+                "error_type": type(exc).__name__,
+                "error": str(exc),
+                "config_path": str(config_path) if config_path else None,
+            })
+        raise
 
 # An example for run this script to evaluate JBShield-D on the Mistral model
 # python detection.py --model mistral

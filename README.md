@@ -105,6 +105,87 @@ chmod +x ./evaluate_detection.sh
 
 The results are saved in `/logs/JBShield-D_{model_name}.log`. We have also provided the logs from our runs in the same directory.
 
+### YAML Runtime Configs
+
+For the Sec4AI experiment workflow, JBShield-D can also be run from YAML runtime configs.
+The original `python detection.py --model mistral` entrypoint is still supported.
+
+```shell
+uv sync
+uv run python detection.py --config configs/runtime/mistral.yml --audit-log --run-id mistral-gate1
+```
+
+To run the official reproduction set, use the manifest runner. If a model is missing,
+gated, or fails because of GPU memory exhaustion, the runner records `Skip ...` and
+continues to the next config.
+
+```shell
+./scripts/run_detection_config_list.sh configs/runtime/manifests/official.txt gate1-official
+```
+
+The fourth argument can restrict the jailbreak families. Gate 1 in
+`memo/official_implementation_experiment_procedure.md` starts with GCG only:
+
+```shell
+./scripts/run_detection_config_list.sh configs/runtime/manifests/gate1-official.txt gate1-official-gcg logs/JBShield-D_gate1_gcg.log gcg
+```
+
+On Windows or any environment without bash, use the Python runner:
+
+```shell
+uv run python scripts/run_detection_config_list.py configs/runtime/manifests/gate1-official.txt gate1-official-gcg logs/JBShield-D_gate1_gcg.log gcg
+```
+
+Experiment manifests are grouped by the Sec4AI experiment plan:
+
+| Manifest | Purpose |
+| --- | --- |
+| `gate1-official.txt` | Official reproduction smoke set: Mistral-7B and Llama-3-8B. |
+| `official.txt` | Full official artifact set: Mistral, Llama-2, Llama-3, Vicuna-7B, Vicuna-13B. |
+| `migration-pilot.txt` | Gate 3 first migration: Qwen2.5/Qwen3/Llama3.1/Gemma3 small to mid models. |
+| `architecture-core.txt` | Core architecture comparison: Dense GQA, MoE, MLA, hybrid mixer, local/global. |
+| `qwen.txt` | Qwen scale, generation, dense/MoE, and hybrid-version comparisons. |
+| `gemma.txt` | Gemma generation and dense/MoE comparisons. |
+| `domain.txt` | General/code domain-adaptation comparisons. |
+| `all-experiment.txt` | Full experiment set; large/gated models may be skipped. |
+
+Examples:
+
+```shell
+./scripts/run_detection_config_list.sh configs/runtime/manifests/migration-pilot.txt jbshield-migration-pilot logs/JBShield-D_migration_pilot.log gcg
+./scripts/run_detection_config_list.sh configs/runtime/manifests/architecture-core.txt jbshield-architecture logs/JBShield-D_architecture.log gcg
+./scripts/run_detection_config_list.sh configs/runtime/manifests/all-experiment.txt jbshield-full logs/JBShield-D_full.log
+```
+
+Equivalent cross-platform commands:
+
+```shell
+uv run python scripts/run_detection_config_list.py configs/runtime/manifests/migration-pilot.txt jbshield-migration-pilot logs/JBShield-D_migration_pilot.log gcg
+uv run python scripts/run_detection_config_list.py configs/runtime/manifests/architecture-core.txt jbshield-architecture logs/JBShield-D_architecture.log gcg
+uv run python scripts/run_detection_config_list.py configs/runtime/manifests/all-experiment.txt jbshield-full logs/JBShield-D_full.log
+```
+
+For non-official target models, YAML configs use `data.jailbreak_model_name: llama-3`
+so the same official Llama-3 jailbreak prompts are reused across models. This keeps the
+input set fixed for cross-model comparison while changing only the target model.
+
+Structured outputs are written to:
+
+```text
+result/{model}/runs/{run_id}/
+```
+
+Each run contains:
+
+- `summary.json`
+- `metrics.json`
+- `samples.jsonl`
+- `config_snapshot.yaml`
+
+`samples.jsonl` includes per-sample toxic and jailbreak cosine scores, selected layers,
+thresholds, labels, and predictions. `summary.json` includes critical layers,
+thresholds, aggregate metrics, and hidden-state audit metadata.
+
 Performance (accuracy/F1-score) of `JBShield-D` across different LLMs (see Table 4 in our paper):
 
 ![detection](./figs/detection.png)

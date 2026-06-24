@@ -1,0 +1,6 @@
+# Full official JBShield-D reproduction targets from the artifact.
+configs/runtime/mistral.yml
+configs/runtime/llama-2.yml
+configs/runtime/llama-3.yml
+configs/runtime/vicuna-7b.yml
+configs/runtime/vicuna-13b.yml
