@@ -7,6 +7,7 @@ from tqdm import tqdm
 from sklearn.metrics import roc_curve
 
 from audit import write_json, write_jsonl, write_yaml
+from phase2_core import write_phase2_outputs
 from repr_cache import EXTRACTION_VERSION, write_hidden_cache
 from config import model_paths
 from config import path_harmful_test, path_harmless_test, path_harmful_calibration, path_harmless_calibration
@@ -235,14 +236,18 @@ def detection(
     cache_hidden=False,
     cache_dir="representations",
     cache_last_k=5,
+    phase2=False,
+    phase2_output_dir="outputs/phase2",
+    strict_spans=False,
 ):
     start_time = time.time()
     jailbreaks = jailbreaks or DEFAULT_JAILBREAKS
     _validate_jailbreaks(jailbreaks)
-    run_id = run_id or f"{model_name}-gate1"
+    run_id = run_id or f"{model_name}-phase1"
     run_dir = _run_dir(output_dir, model_name, run_id)
     runtime_config = runtime_config or {}
     data_config = data_config or {}
+    cache_model_id = model_path or model_name
     if audit_log:
         run_dir.mkdir(parents=True, exist_ok=True)
         snapshot = runtime_config or {
@@ -289,6 +294,7 @@ def detection(
     print("Get embeddings for calibration prompts...")
     embedding_audit = {}
     cache_splits = []
+    phase2_groups = []
 
     def _write_cache(name, prompts, embeddings, tail_embeddings, tail_lens):
         family, label = _classify_group(name)
@@ -296,6 +302,7 @@ def detection(
             {
                 "sample_id": f"{model_name}:{name}:{idx}",
                 "base_request_id": f"{name}:{idx}",
+                "runtime_model_name": model_name,
                 "prompt_index": idx,
                 "attack_family": family,
                 "label": label,
@@ -306,7 +313,7 @@ def detection(
         ]
         split_dir = write_hidden_cache(
             cache_dir,
-            model_name,
+            cache_model_id,
             name,
             embeddings,
             metadata_rows,
@@ -316,45 +323,50 @@ def detection(
         cache_splits.append({"split": name, "path": str(split_dir), "num_samples": len(prompts)})
 
     def collect_embeddings(name, prompts):
-        if cache_hidden:
-            if audit_log:
-                embeddings, tail_embeddings, tail_lens, audit = get_sentence_embeddings(
-                    prompts,
-                    model,
-                    model_name,
-                    tokenizer,
-                    return_audit=True,
-                    chat_template=chat_template,
-                    last_k=cache_last_k,
-                    return_tail=True,
-                )
-                embedding_audit[name] = audit
-            else:
-                embeddings, tail_embeddings, tail_lens = get_sentence_embeddings(
-                    prompts,
-                    model,
-                    model_name,
-                    tokenizer,
-                    chat_template=chat_template,
-                    last_k=cache_last_k,
-                    return_tail=True,
-                )
-            _write_cache(name, prompts, embeddings, tail_embeddings, tail_lens)
-            return embeddings
-        if audit_log:
-            embeddings, audit = get_sentence_embeddings(
-                prompts,
-                model,
-                model_name,
-                tokenizer,
-                return_audit=True,
-                chat_template=chat_template,
+        if not (cache_hidden or audit_log or phase2):
+            return get_sentence_embeddings(
+                prompts, model, model_name, tokenizer, chat_template=chat_template
             )
-            embedding_audit[name] = audit
-            return embeddings
-        return get_sentence_embeddings(
-            prompts, model, model_name, tokenizer, chat_template=chat_template
+
+        result = get_sentence_embeddings(
+            prompts,
+            model,
+            model_name,
+            tokenizer,
+            return_audit=audit_log,
+            chat_template=chat_template,
+            last_k=cache_last_k,
+            return_tail=cache_hidden,
+            return_spans=phase2,
+            strict_spans=strict_spans,
         )
+        cursor = 0
+        embeddings = result[cursor]
+        cursor += 1
+        tail_embeddings = None
+        tail_lens = None
+        if cache_hidden:
+            tail_embeddings = result[cursor]
+            tail_lens = result[cursor + 1]
+            cursor += 2
+        if audit_log:
+            embedding_audit[name] = result[cursor]
+            cursor += 1
+        if phase2:
+            span_embeddings = result[cursor]
+            span_records = result[cursor + 1]
+            phase2_groups.append(
+                {
+                    "group_name": name,
+                    "prompts": prompts,
+                    "embeddings": embeddings,
+                    "span_embeddings": span_embeddings,
+                    "span_records": span_records,
+                }
+            )
+        if cache_hidden:
+            _write_cache(name, prompts, embeddings, tail_embeddings, tail_lens)
+        return embeddings
 
     calibration_harmless_embeddings = collect_embeddings("calibration_harmless", harmless_prompts_calibration)
     calibration_harmful_embeddings = collect_embeddings("calibration_harmful", harmful_prompts_calibration)
@@ -508,9 +520,10 @@ def detection(
         for idx, (result_safety, result_jailbreak, score_safety, score_jailbreak) in enumerate(zip(results_safety, results_jailbreak, scores_safety, scores_jailbreak)):
             prediction = 1.0 if result_safety == 1.0 and result_jailbreak == 1.0 else 0.0
             labels_jb.append(prediction)
-            if audit_log:
+            if audit_log or phase2:
                 sample_records.append({
                     "id": f"{model_name}:{jailbreak}:test:jailbreak:{idx}",
+                    "prompt_id": f"{model_name}:test_{jailbreak}:{idx}",
                     "split": "test",
                     "attack_family": jailbreak,
                     "label": 1,
@@ -526,9 +539,10 @@ def detection(
         for idx, (result_safety, result_jailbreak, score_safety, score_jailbreak) in enumerate(zip(results_harmless_safety, results_harmless_jailbreak, scores_harmless_safety, scores_harmless_jailbreak)):
             prediction = 1.0 if result_safety == 1.0 and result_jailbreak == 1.0 else 0.0
             labels_harmless.append(prediction)
-            if audit_log:
+            if audit_log or phase2:
                 sample_records.append({
                     "id": f"{model_name}:{jailbreak}:test:harmless:{idx}",
+                    "prompt_id": f"{model_name}:test_harmless:{idx}",
                     "split": "test",
                     "attack_family": jailbreak,
                     "label": 0,
@@ -605,12 +619,51 @@ def detection(
         "hidden_state_audit": embedding_audit,
         "hidden_cache": {
             "enabled": cache_hidden,
+            "model_id": cache_model_id if cache_hidden else None,
             "cache_dir": cache_dir if cache_hidden else None,
             "last_k": cache_last_k if cache_hidden else None,
             "extraction_version": EXTRACTION_VERSION if cache_hidden else None,
             "splits": cache_splits,
         },
+        "phase2": {
+            "enabled": phase2,
+            "output_dir": phase2_output_dir if phase2 else None,
+            "strict_spans": strict_spans if phase2 else None,
+        },
     }
+    if phase2:
+        model_metadata = {
+            "model_id": cache_model_id,
+            "model_name": model_name,
+            "model_path": effective_model_paths.get(model_name),
+            "chat_template": chat_template,
+            "tokenizer_class": type(tokenizer).__name__,
+            "model_class": type(model).__name__,
+            "num_layers": int(getattr(model.config, "num_hidden_layers", 0) + 1),
+            "hidden_size": getattr(model.config, "hidden_size", None),
+            "vocab_size": getattr(model.config, "vocab_size", None),
+            "dtype": str(getattr(model, "dtype", "")),
+            "device": str(getattr(model, "device", "")),
+            "extraction_version": "jbshield-phase2-v1",
+        }
+        phase2_dir = write_phase2_outputs(
+            phase2_output_dir,
+            run_id,
+            model_metadata,
+            phase2_groups,
+            sample_records,
+            thresholds,
+            summary["critical_layers"],
+            {
+                "toxic": calibration_safety_vector,
+                "jailbreak": calibration_jailbreak_vectors,
+            },
+            {
+                "toxic": delta_safety,
+                "jailbreak": delta_jailbreaks,
+            },
+        )
+        summary["phase2"]["path"] = str(phase2_dir)
     if audit_log:
         write_json(run_dir / "metrics.json", metrics)
         write_json(run_dir / "summary.json", summary)
@@ -632,6 +685,9 @@ if __name__ == '__main__':
     parser.add_argument('--cache-hidden', action='store_true', help='Persist per-prompt hidden states')
     parser.add_argument('--cache-dir', type=str, default=None, help='Root dir for hidden-state cache')
     parser.add_argument('--cache-last-k', type=int, default=None, help='Trailing tokens to cache')
+    parser.add_argument('--phase2', action='store_true', help='Write Phase2 parquet/safetensors artifacts')
+    parser.add_argument('--phase2-output-dir', type=str, default=None, help='Root dir for Phase2 artifacts')
+    parser.add_argument('--strict-spans', action='store_true', help='Fail when Phase2 token span mapping is ambiguous or missing')
 
     args = parser.parse_args()
     runtime_config = {}
@@ -645,6 +701,7 @@ if __name__ == '__main__':
     audit = runtime_config.get("audit", {})
     detection_config = runtime_config.get("detection", {})
     cache_config = runtime_config.get("cache", {})
+    phase2_config = runtime_config.get("phase2", {})
 
     model_name = args.model or model_config.get("name")
     if not model_name:
@@ -655,11 +712,16 @@ if __name__ == '__main__':
         jailbreaks = _parse_jailbreaks(detection_config.get("jailbreaks")) or DEFAULT_JAILBREAKS
     output_dir = args.output_dir or runtime.get("output_dir", "result")
     audit_log = bool(args.audit_log or audit.get("enabled", False))
-    run_id = args.run_id or audit.get("run_id") or f"{model_name}-gate1"
+    run_id = args.run_id or audit.get("run_id") or f"{model_name}-phase1"
     update_vectors = bool(args.update_vectors or detection_config.get("update_vectors", False))
     cache_hidden = bool(args.cache_hidden or cache_config.get("hidden_states", False))
     cache_dir = args.cache_dir or cache_config.get("dir", "representations")
     cache_last_k = args.cache_last_k if args.cache_last_k is not None else int(cache_config.get("last_k", 5))
+    phase2 = bool(args.phase2 or phase2_config.get("enabled", False))
+    phase2_output_dir = args.phase2_output_dir or phase2_config.get("output_dir", "outputs/phase2")
+    strict_spans = bool(args.strict_spans or phase2_config.get("strict_spans", False))
+    if cache_last_k < 1:
+        parser.error("--cache-last-k / cache.last_k must be >= 1")
 
     # Run this script to evaluate the detection performance of JBShield-D
     try:
@@ -678,6 +740,9 @@ if __name__ == '__main__':
             cache_hidden=cache_hidden,
             cache_dir=cache_dir,
             cache_last_k=cache_last_k,
+            phase2=phase2,
+            phase2_output_dir=phase2_output_dir,
+            strict_spans=strict_spans,
         )
     except Exception as exc:
         if audit_log:

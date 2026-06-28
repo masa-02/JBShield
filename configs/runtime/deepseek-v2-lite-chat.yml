@@ -13,7 +13,15 @@ runtime:
   seed: 0
 audit:
   enabled: true
-  run_id: deepseek-v2-lite-chat-gate1
+  run_id: deepseek-v2-lite-chat-phase1
 detection:
   update_vectors: false
   jailbreaks: [ijp, gcg, saa, autodan, pair, drattack, puzzler, zulu, base64]
+cache:
+  hidden_states: false   # set true to persist per-prompt hidden states under `dir`
+  dir: representations
+  last_k: 5
+phase2:
+  enabled: false
+  output_dir: outputs/phase2
+  strict_spans: false

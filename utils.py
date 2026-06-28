@@ -274,7 +274,18 @@ def get_output_prompt(
     return output_prompt
 
 
-def get_sentence_embeddings(prompts, model, model_name, tokenizer, return_audit=False, chat_template=None, last_k=1, return_tail=False):
+def get_sentence_embeddings(
+    prompts,
+    model,
+    model_name,
+    tokenizer,
+    return_audit=False,
+    chat_template=None,
+    last_k=1,
+    return_tail=False,
+    return_spans=False,
+    strict_spans=False,
+):
     """
     Get sentence embeddings for each layer of the model
 
@@ -284,6 +295,7 @@ def get_sentence_embeddings(prompts, model, model_name, tokenizer, return_audit=
     - tokenizer: tokenizer to use for encoding prompts
     - last_k: number of trailing token positions to also collect when return_tail is set
     - return_tail: if True, also return per-prompt last-k token embeddings and tail lengths
+    - return_spans: if True, also return user-prompt span mean embeddings and token spans
 
     Returns:
     (Mean-pooled and weighted mean-pooled embeddings removed.)
@@ -296,7 +308,9 @@ def get_sentence_embeddings(prompts, model, model_name, tokenizer, return_audit=
     num_layers = model.config.num_hidden_layers + 1
     embeddings_last_token = [[] for _ in range(num_layers)]
     tail_embeddings = [[] for _ in range(num_layers)] if return_tail else None
+    span_embeddings = [[] for _ in range(num_layers)] if return_spans else None
     tail_lens = [] if return_tail else None
+    span_records = [] if return_spans else None
     hidden_size_cfg = getattr(model.config, "hidden_size", 1024)
     audit = {
         "num_prompts": 0,
@@ -311,19 +325,52 @@ def get_sentence_embeddings(prompts, model, model_name, tokenizer, return_audit=
     }
     layer_outputs = None
 
-    for prompt in tqdm(prompts):
+    if return_spans:
+        from phase2_core.spans import resolve_user_prompt_span
+
+    for prompt_index, prompt in enumerate(tqdm(prompts)):
 
         if prompt != "":
-            layer_outputs = get_hidden_states(
-                model, model_name, tokenizer, prompt, chat_template=chat_template
-            )
+            if return_spans:
+                input_ids, layer_outputs = get_hidden_states(
+                    model,
+                    model_name,
+                    tokenizer,
+                    prompt,
+                    return_input_ids=True,
+                    chat_template=chat_template,
+                )
+                input_token_ids = input_ids["input_ids"][0].detach().cpu().tolist()
+                resolved_span = resolve_user_prompt_span(
+                    input_token_ids,
+                    tokenizer,
+                    prompt,
+                    strict=strict_spans,
+                )
+            else:
+                layer_outputs = get_hidden_states(
+                    model, model_name, tokenizer, prompt, chat_template=chat_template
+                )
+                resolved_span = None
         else:
             for i in range(model.config.num_hidden_layers + 1):
                 embeddings_last_token[i].append(torch.zeros(hidden_size_cfg).cpu())
                 if return_tail:
                     tail_embeddings[i].append(torch.zeros(last_k, hidden_size_cfg).cpu())
+                if return_spans:
+                    span_embeddings[i].append(torch.zeros(hidden_size_cfg).cpu())
             if return_tail:
                 tail_lens.append(0)
+            if return_spans:
+                span_records.append(
+                    {
+                        "prompt_index": prompt_index,
+                        "sequence_length": 0,
+                        "user_prompt_start": 0,
+                        "user_prompt_end": 0,
+                        "span_source": "empty_prompt",
+                    }
+                )
             audit["num_prompts"] += 1
             audit["num_empty_prompts"] += 1
             continue
@@ -333,6 +380,18 @@ def get_sentence_embeddings(prompts, model, model_name, tokenizer, return_audit=
         tail_len = min(seq_len, last_k)
         if return_tail:
             tail_lens.append(tail_len)
+        if return_spans:
+            start = int(resolved_span["start"])
+            end = int(resolved_span["end"])
+            span_records.append(
+                {
+                    "prompt_index": prompt_index,
+                    "sequence_length": int(resolved_span["sequence_length"]),
+                    "user_prompt_start": start,
+                    "user_prompt_end": end,
+                    "span_source": resolved_span["source"],
+                }
+            )
         for i, layer_output in enumerate(layer_outputs):
             if return_audit:
                 detached = layer_output.detach()
@@ -357,15 +416,30 @@ def get_sentence_embeddings(prompts, model, model_name, tokenizer, return_audit=
                     tail = torch.cat([pad, tail], dim=0)
                 tail_embeddings[i].append(tail)
 
+            if return_spans:
+                if end > start:
+                    span = layer_output[0, start:end, :].mean(dim=0).detach().cpu()
+                else:
+                    span = torch.zeros(layer_output.shape[-1], dtype=layer_output.dtype)
+                span_embeddings[i].append(span)
+
     if layer_outputs is not None:
         del layer_outputs
     gc.collect()
+    if return_tail and return_audit and return_spans:
+        return embeddings_last_token, tail_embeddings, tail_lens, audit, span_embeddings, span_records
     if return_tail and return_audit:
         return embeddings_last_token, tail_embeddings, tail_lens, audit
+    if return_tail and return_spans:
+        return embeddings_last_token, tail_embeddings, tail_lens, span_embeddings, span_records
     if return_tail:
         return embeddings_last_token, tail_embeddings, tail_lens
+    if return_audit and return_spans:
+        return embeddings_last_token, audit, span_embeddings, span_records
     if return_audit:
         return embeddings_last_token, audit
+    if return_spans:
+        return embeddings_last_token, span_embeddings, span_records
     return embeddings_last_token
 
 
@@ -442,7 +516,8 @@ def get_svd(difference_matrix):
     - S: singular values
     - V: right singular vectors
     """
-    X = torch.stack(difference_matrix).to(torch.float32).to("cuda")
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    X = torch.stack(difference_matrix).to(torch.float32).to(device)
     if len(X.shape) == 1:
         X = X.unsqueeze(0)
     U, S, V = torch.svd(X)

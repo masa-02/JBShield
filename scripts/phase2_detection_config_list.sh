@@ -1,8 +1,8 @@
 set -euo pipefail
 
 LIST_FILE="${1:-configs/runtime/manifests/official.txt}"
-RUN_PREFIX="${2:-phase1-official}"
-OUTPUT_FILE="${3:-logs/JBShield-D_runtime.log}"
+RUN_PREFIX="${2:-phase2-official}"
+OUTPUT_FILE="${3:-logs/JBShield-D_phase2.log}"
 JAILBREAKS="${4:-}"
 
 mkdir -p "$(dirname "${OUTPUT_FILE}")"
@@ -30,9 +30,10 @@ while IFS= read -r CONFIG || [[ -n "${CONFIG}" ]]; do
     if ! uv run python -u detection.py \
         --config "${CONFIG}" \
         --audit-log \
+        --phase2 \
         --run-id "${RUN_ID}" \
         "${EXTRA_ARGS[@]}" >> "${OUTPUT_FILE}" 2>&1; then
-        echo "Skip ${CONFIG}: detection failed. Check GPU memory, model files, gated model access, span mapping, or model-specific runtime support." >> "${OUTPUT_FILE}"
+        echo "Skip ${CONFIG}: Phase2 detection failed. Check GPU memory, model files, gated model access, span mapping, or model-specific runtime support." >> "${OUTPUT_FILE}"
         continue
     fi
 done < "${LIST_FILE}"

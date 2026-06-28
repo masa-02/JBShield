@@ -1,7 +1,7 @@
 set -euo pipefail
 
 LIST_FILE="${1:-configs/runtime/manifests/official.txt}"
-RUN_PREFIX="${2:-gate1-official}"
+RUN_PREFIX="${2:-phase1-official}"
 OUTPUT_FILE="${3:-logs/JBShield-D_runtime.log}"
 JAILBREAKS="${4:-}"
 

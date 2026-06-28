@@ -112,7 +112,7 @@ The original `python detection.py --model mistral` entrypoint is still supported
 
 ```shell
 uv sync
-uv run python detection.py --config configs/runtime/mistral.yml --audit-log --run-id mistral-gate1
+uv run python detection.py --config configs/runtime/mistral.yml --audit-log --run-id mistral-phase1
 ```
 
 To run the official reproduction set, use the manifest runner. If a model is missing,
@@ -120,29 +120,38 @@ gated, or fails because of GPU memory exhaustion, the runner records `Skip ...` 
 continues to the next config.
 
 ```shell
-./scripts/run_detection_config_list.sh configs/runtime/manifests/official.txt gate1-official
+./scripts/run_detection_config_list.sh configs/runtime/manifests/official.txt phase1-official
 ```
 
-The fourth argument can restrict the jailbreak families. Gate 1 in
+The fourth argument can restrict the jailbreak families. Phase1 in
 `memo/official_implementation_experiment_procedure.md` starts with GCG only:
 
 ```shell
-./scripts/run_detection_config_list.sh configs/runtime/manifests/gate1-official.txt gate1-official-gcg logs/JBShield-D_gate1_gcg.log gcg
+./scripts/run_detection_config_list.sh configs/runtime/manifests/phase1-official.txt phase1-official-gcg logs/JBShield-D_phase1_gcg.log gcg
 ```
 
 On Windows or any environment without bash, use the Python runner:
 
 ```shell
-uv run python scripts/run_detection_config_list.py configs/runtime/manifests/gate1-official.txt gate1-official-gcg logs/JBShield-D_gate1_gcg.log gcg
+uv run python scripts/run_detection_config_list.py configs/runtime/manifests/phase1-official.txt phase1-official-gcg logs/JBShield-D_phase1_gcg.log gcg
+```
+
+Phase2 writes the common parquet/safetensors artifacts used by the internal
+representation experiments:
+
+```shell
+uv run python detection.py --config configs/runtime/mistral.yml --audit-log --phase2 --run-id mistral-phase2-smoke
+./scripts/phase2_detection_config_list.sh configs/runtime/manifests/official.txt phase2-official
 ```
 
 Experiment manifests are grouped by the Sec4AI experiment plan:
 
 | Manifest | Purpose |
 | --- | --- |
-| `gate1-official.txt` | Official reproduction smoke set: Mistral-7B and Llama-3-8B. |
+| `phase1-official.txt` | Official reproduction smoke set: Mistral-7B and Llama-3-8B. |
+| `gate1-official.txt` | Compatibility alias for the Phase1 smoke set. |
 | `official.txt` | Full official artifact set: Mistral, Llama-2, Llama-3, Vicuna-7B, Vicuna-13B. |
-| `migration-pilot.txt` | Gate 3 first migration: Qwen2.5/Qwen3/Llama3.1/Gemma3 small to mid models. |
+| `migration-pilot.txt` | Migration pilot: Qwen2.5/Qwen3/Llama3.1/Gemma3 small to mid models. |
 | `architecture-core.txt` | Core architecture comparison: Dense GQA, MoE, MLA, hybrid mixer, local/global. |
 | `qwen.txt` | Qwen scale, generation, dense/MoE, and hybrid-version comparisons. |
 | `gemma.txt` | Gemma generation and dense/MoE comparisons. |
@@ -185,6 +194,17 @@ Each run contains:
 `samples.jsonl` includes per-sample toxic and jailbreak cosine scores, selected layers,
 thresholds, labels, and predictions. `summary.json` includes critical layers,
 thresholds, aggregate metrics, and hidden-state audit metadata.
+
+When `--phase2` is enabled, additional artifacts are written under:
+
+```text
+outputs/phase2/{run_id}/
+```
+
+The Phase2 directory contains `prompts.parquet`, `model_metadata.parquet`,
+`token_spans.parquet`, `generation_outputs.parquet`, `behavior_labels.parquet`,
+`hidden_last.safetensors`, `hidden_spans.safetensors`, `jbshield_scores.parquet`,
+and calibration artifacts for thresholds, concept vectors, and concept stats.
 
 Performance (accuracy/F1-score) of `JBShield-D` across different LLMs (see Table 4 in our paper):
 
