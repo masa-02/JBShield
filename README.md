@@ -123,6 +123,41 @@ continues to the next config.
 ./scripts/run_detection_config_list.sh configs/runtime/manifests/official.txt phase1-official
 ```
 
+The manifest runners clean each config's Hugging Face model cache by default after
+success or failure. This keeps Google Cloud disks from accumulating every model in a
+large run. Override the policy when needed:
+
+```bash
+# default for manifest runners
+JBSHIELD_CLEAN_HF_CACHE=always ./scripts/run_detection_config_list.sh configs/runtime/manifests/official.txt phase1-official
+
+# clean only failed or partial downloads
+JBSHIELD_CLEAN_HF_CACHE=on_failure ./scripts/run_detection_config_list.sh configs/runtime/manifests/official.txt phase1-official
+
+# keep cache for immediate reruns
+JBSHIELD_CLEAN_HF_CACHE=never ./scripts/run_detection_config_list.sh configs/runtime/manifests/official.txt phase1-official
+
+# inspect what would be removed
+JBSHIELD_CLEAN_HF_CACHE=always JBSHIELD_CLEAN_HF_CACHE_DRY_RUN=1 ./scripts/run_detection_config_list.sh configs/runtime/manifests/official.txt phase1-official
+```
+
+Manual cleanup for one runtime config:
+
+```bash
+uv run python scripts/cleanup_hf_cache.py --config configs/runtime/qwen2.5-14b-instruct.yml --dry-run
+uv run python scripts/cleanup_hf_cache.py --config configs/runtime/qwen2.5-14b-instruct.yml
+```
+
+For a non-default HF cache location, either set `HF_HOME` / `HF_HUB_CACHE` in the
+environment or add `model_loading.cache_dir` to a runtime YAML:
+
+```yaml
+model_loading:
+  dtype: float16
+  device_map: auto
+  cache_dir: /mnt/disks/data/huggingface_cache
+```
+
 The fourth argument can restrict the jailbreak families. Phase1 in
 `memo/official_implementation_experiment_procedure.md` starts with GCG only:
 

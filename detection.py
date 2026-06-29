@@ -231,6 +231,7 @@ def detection(
     runtime_config=None,
     config_path=None,
     model_path=None,
+    model_loading=None,
     data_config=None,
     chat_template=None,
     cache_hidden=False,
@@ -247,6 +248,7 @@ def detection(
     run_dir = _run_dir(output_dir, model_name, run_id)
     runtime_config = runtime_config or {}
     data_config = data_config or {}
+    model_loading = model_loading or {}
     cache_model_id = model_path or model_name
     if audit_log:
         run_dir.mkdir(parents=True, exist_ok=True)
@@ -264,7 +266,7 @@ def detection(
     effective_model_paths = dict(model_paths)
     if model_path:
         effective_model_paths[model_name] = model_path
-    model, tokenizer = load_model(model_name, effective_model_paths)
+    model, tokenizer = load_model(model_name, effective_model_paths, model_loading=model_loading)
 
     # Load data
     # harmful_prompts, harmless_prompts = load_ori_prompts(path_harmful, path_harmless)
@@ -605,6 +607,7 @@ def detection(
         "status": "success",
         "model": model_name,
         "model_path": effective_model_paths.get(model_name),
+        "model_loading": model_loading,
         "chat_template": chat_template,
         "jailbreak_model_name": jailbreak_model_name,
         "run_id": run_id,
@@ -735,6 +738,7 @@ if __name__ == '__main__':
             runtime_config=runtime_config,
             config_path=config_path,
             model_path=model_config.get("path"),
+            model_loading=runtime_config.get("model_loading", {}),
             data_config=data_config,
             chat_template=model_config.get("chat_template"),
             cache_hidden=cache_hidden,
@@ -752,8 +756,9 @@ if __name__ == '__main__':
                 "model": model_name,
                 "run_id": run_id,
                 "error_type": type(exc).__name__,
-                "error": str(exc),
-                "config_path": str(config_path) if config_path else None,
+            "error": str(exc),
+            "config_path": str(config_path) if config_path else None,
+            "model_loading": runtime_config.get("model_loading", {}),
             })
         raise
 

@@ -47,7 +47,33 @@ def lp_norm(v1, v2, p=2):
     return lp_norm
 
 
-def load_model(model_name, model_paths):
+def _dtype_from_name(value, default=torch.float16):
+    if value is None:
+        return default
+    normalized = str(value).lower()
+    if normalized in {"auto"}:
+        return "auto"
+    if normalized in {"none", "null"}:
+        return None
+    if normalized in {"bf16", "bfloat16"}:
+        return torch.bfloat16
+    if normalized in {"fp16", "float16", "16bit"}:
+        return torch.float16
+    if normalized in {"fp32", "float32", "32bit"}:
+        return torch.float32
+    raise ValueError(f"Unsupported dtype: {value}")
+
+
+def _hub_kwargs(loading_config):
+    loading_config = loading_config or {}
+    kwargs = {}
+    for key in ("cache_dir", "local_files_only", "revision", "token"):
+        if key in loading_config and loading_config[key] is not None:
+            kwargs[key] = loading_config[key]
+    return kwargs
+
+
+def load_model(model_name, model_paths, model_loading=None):
     """
     Load a model and tokenizer.
 
@@ -61,22 +87,32 @@ def load_model(model_name, model_paths):
     """
 
     model_path = model_paths.get(model_name)
+    model_loading = model_loading or {}
 
     if model_path is None:
         raise ValueError(
             f"Model name {model_name} not recognized. Please choose from {list(model_paths.keys())}"
         )
 
+    model_kwargs = {
+        "trust_remote_code": True,
+        "device_map": model_loading.get("device_map", "auto"),
+    }
+    dtype = _dtype_from_name(model_loading.get("dtype", "float16"))
+    if dtype is not None:
+        model_kwargs["dtype"] = dtype
+    model_kwargs.update(_hub_kwargs(model_loading))
+
     model = AutoModelForCausalLM.from_pretrained(
         model_path,
-        torch_dtype=torch.float16,
         # low_cpu_mem_usage=True,
-        trust_remote_code=True,
-        device_map="auto",
+        **model_kwargs,
     ).eval()
 
+    tokenizer_kwargs = {"trust_remote_code": True, "use_fast": False}
+    tokenizer_kwargs.update(_hub_kwargs(model_loading))
     tokenizer = AutoTokenizer.from_pretrained(
-        model_path, trust_remote_code=True, use_fast=False
+        model_path, **tokenizer_kwargs
     )
 
     if tokenizer.pad_token is None:
