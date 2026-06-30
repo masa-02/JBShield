@@ -326,6 +326,137 @@ def get_hidden_states(model, model_name, tokenizer, prompt, return_input_ids=Fal
         return input_ids, hidden_states
 
 
+def _module_output_tensor(output):
+    if isinstance(output, tuple):
+        return output[0]
+    if hasattr(output, "last_hidden_state"):
+        return output.last_hidden_state
+    return output
+
+
+def _backbone_for_hidden_capture(model):
+    backbone = getattr(model, "model", None)
+    if backbone is None:
+        backbone = getattr(model, "base_model", None)
+    if backbone is None:
+        raise ValueError("Cannot locate transformer backbone for hidden-state capture")
+
+    layers = getattr(backbone, "layers", None)
+    if layers is None and hasattr(backbone, "decoder"):
+        layers = getattr(backbone.decoder, "layers", None)
+    embed_tokens = getattr(backbone, "embed_tokens", None)
+    if embed_tokens is None and hasattr(backbone, "decoder"):
+        embed_tokens = getattr(backbone.decoder, "embed_tokens", None)
+    if layers is None or embed_tokens is None:
+        raise ValueError("Backbone must expose embed_tokens and layers for JBShield hidden capture")
+    return backbone, embed_tokens, layers
+
+
+def collect_hidden_summaries(
+    model,
+    model_inputs,
+    span=None,
+    last_k=1,
+    return_tail=False,
+    return_spans=False,
+    return_audit=False,
+):
+    """Collect only the hidden-state summaries JBShield persists.
+
+    This avoids CausalLM logits and avoids retaining full per-token hidden states
+    for every layer on GPU.
+    """
+    backbone, embed_tokens, layers = _backbone_for_hidden_capture(model)
+    summaries = []
+    audit = {
+        "dtype": None,
+        "device": None,
+        "max_sequence_length": 0,
+        "nonfinite_hidden_state_count": 0,
+        "total_hidden_state_values": 0,
+        "audit_scope": "captured_hidden_summaries",
+    }
+
+    def capture_hidden(output):
+        hidden = _module_output_tensor(output)
+        if hidden.ndim != 3:
+            raise ValueError(f"Expected hidden state [batch, seq, dim], got {tuple(hidden.shape)}")
+
+        seq_len = int(hidden.shape[1])
+        tail_len = min(seq_len, last_k)
+        item = {
+            "last": hidden[0, -1, :].detach().cpu(),
+            "seq_len": seq_len,
+            "hidden_size": int(hidden.shape[-1]),
+        }
+        if return_tail:
+            tail = hidden[0, -tail_len:, :].detach().cpu()
+            if tail_len < last_k:
+                pad = torch.zeros(last_k - tail_len, tail.shape[-1], dtype=tail.dtype)
+                tail = torch.cat([pad, tail], dim=0)
+            item["tail"] = tail
+        if return_spans:
+            start, end = span or (0, seq_len)
+            if end > start:
+                item["span"] = hidden[0, start:end, :].mean(dim=0).detach().cpu()
+            else:
+                item["span"] = torch.zeros(hidden.shape[-1], dtype=hidden.dtype)
+
+        if return_audit:
+            audit["dtype"] = str(hidden.dtype)
+            audit["device"] = str(hidden.device)
+            audit["max_sequence_length"] = max(audit["max_sequence_length"], seq_len)
+            audit_tensors = [item["last"]]
+            if return_tail:
+                audit_tensors.append(item["tail"])
+            if return_spans:
+                audit_tensors.append(item["span"])
+            for tensor in audit_tensors:
+                audit["nonfinite_hidden_state_count"] += int(
+                    torch.logical_not(torch.isfinite(tensor)).sum().item()
+                )
+                audit["total_hidden_state_values"] += int(tensor.numel())
+
+        summaries.append(item)
+
+    hooks = []
+    hooks.append(embed_tokens.register_forward_hook(lambda _m, _inp, out: capture_hidden(out)))
+    for layer in layers:
+        hooks.append(layer.register_forward_hook(lambda _m, _inp, out: capture_hidden(out)))
+
+    try:
+        with torch.no_grad():
+            backbone(
+                **model_inputs,
+                return_dict=True,
+                output_hidden_states=False,
+                use_cache=False,
+            )
+    finally:
+        for hook in hooks:
+            hook.remove()
+
+    expected_layers = int(getattr(model.config, "num_hidden_layers", len(layers)) + 1)
+    if len(summaries) != expected_layers:
+        raise ValueError(f"Captured {len(summaries)} layers, expected {expected_layers}")
+
+    result = {
+        "last": [item["last"] for item in summaries],
+        "sequence_length": summaries[0]["seq_len"] if summaries else 0,
+        "hidden_size": summaries[0]["hidden_size"] if summaries else 0,
+        "audit": audit,
+    }
+    if return_tail:
+        result["tail"] = [item["tail"] for item in summaries]
+        result["tail_len"] = min(result["sequence_length"], last_k)
+    if return_spans:
+        result["span"] = [item["span"] for item in summaries]
+
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    return result
+
+
 def get_input_ids(model, model_name, tokenizer, prompt, chat_template=None):
     """
     Get input_ids for a given prompt.
@@ -447,24 +578,15 @@ def get_sentence_embeddings(
         "nonfinite_hidden_state_count": 0,
         "total_hidden_state_values": 0,
     }
-    layer_outputs = None
-
     if return_spans:
         from phase2_core.spans import resolve_user_prompt_span
 
     for prompt_index, prompt in enumerate(tqdm(prompts)):
 
         if prompt != "":
+            input_ids = get_input_ids(model, model_name, tokenizer, prompt, chat_template=chat_template)
+            input_token_ids = input_ids["input_ids"][0].detach().cpu().tolist()
             if return_spans:
-                input_ids, layer_outputs = get_hidden_states(
-                    model,
-                    model_name,
-                    tokenizer,
-                    prompt,
-                    return_input_ids=True,
-                    chat_template=chat_template,
-                )
-                input_token_ids = input_ids["input_ids"][0].detach().cpu().tolist()
                 resolved_span = resolve_user_prompt_span(
                     input_token_ids,
                     tokenizer,
@@ -472,9 +594,6 @@ def get_sentence_embeddings(
                     strict=strict_spans,
                 )
             else:
-                layer_outputs = get_hidden_states(
-                    model, model_name, tokenizer, prompt, chat_template=chat_template
-                )
                 resolved_span = None
         else:
             for i in range(model.config.num_hidden_layers + 1):
@@ -500,13 +619,25 @@ def get_sentence_embeddings(
             continue
 
         audit["num_prompts"] += 1
-        seq_len = int(layer_outputs[0].shape[1])
+        if return_spans:
+            span = (int(resolved_span["start"]), int(resolved_span["end"]))
+        else:
+            span = None
+        summary = collect_hidden_summaries(
+            model,
+            input_ids,
+            span=span,
+            last_k=last_k,
+            return_tail=return_tail,
+            return_spans=return_spans,
+            return_audit=return_audit,
+        )
+        seq_len = int(summary["sequence_length"])
         tail_len = min(seq_len, last_k)
         if return_tail:
             tail_lens.append(tail_len)
         if return_spans:
-            start = int(resolved_span["start"])
-            end = int(resolved_span["end"])
+            start, end = span
             span_records.append(
                 {
                     "prompt_index": prompt_index,
@@ -516,39 +647,24 @@ def get_sentence_embeddings(
                     "span_source": resolved_span["source"],
                 }
             )
-        for i, layer_output in enumerate(layer_outputs):
-            if return_audit:
-                detached = layer_output.detach()
-                audit["dtype"] = str(detached.dtype)
-                audit["device"] = str(detached.device)
-                audit["max_sequence_length"] = max(
-                    audit["max_sequence_length"], int(detached.shape[1])
-                )
-                audit["nonfinite_hidden_state_count"] += int(
-                    torch.logical_not(torch.isfinite(detached)).sum().item()
-                )
-                audit["total_hidden_state_values"] += int(detached.numel())
+        if return_audit:
+            summary_audit = summary["audit"]
+            audit["dtype"] = summary_audit["dtype"]
+            audit["device"] = summary_audit["device"]
+            audit["max_sequence_length"] = max(
+                audit["max_sequence_length"], int(summary_audit["max_sequence_length"])
+            )
+            audit["nonfinite_hidden_state_count"] += int(summary_audit["nonfinite_hidden_state_count"])
+            audit["total_hidden_state_values"] += int(summary_audit["total_hidden_state_values"])
+            audit["audit_scope"] = summary_audit["audit_scope"]
 
-            # Last token embedding for the current layer
-            embeddings_last_token[i].append(layer_output[0, -1, :].detach().cpu())
-
+        for i, last_embedding in enumerate(summary["last"]):
+            embeddings_last_token[i].append(last_embedding)
             if return_tail:
-                # Trailing last_k token embeddings, front-padded to [last_k, d]
-                tail = layer_output[0, -tail_len:, :].detach().cpu()
-                if tail_len < last_k:
-                    pad = torch.zeros(last_k - tail_len, tail.shape[-1], dtype=tail.dtype)
-                    tail = torch.cat([pad, tail], dim=0)
-                tail_embeddings[i].append(tail)
-
+                tail_embeddings[i].append(summary["tail"][i])
             if return_spans:
-                if end > start:
-                    span = layer_output[0, start:end, :].mean(dim=0).detach().cpu()
-                else:
-                    span = torch.zeros(layer_output.shape[-1], dtype=layer_output.dtype)
-                span_embeddings[i].append(span)
+                span_embeddings[i].append(summary["span"][i])
 
-    if layer_outputs is not None:
-        del layer_outputs
     gc.collect()
     if return_tail and return_audit and return_spans:
         return embeddings_last_token, tail_embeddings, tail_lens, audit, span_embeddings, span_records

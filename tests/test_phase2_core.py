@@ -4,13 +4,20 @@ from pathlib import Path
 
 import pandas as pd
 import torch
+import torch.nn as nn
 from safetensors.torch import load_file
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from phase2_core.spans import AmbiguousSpanError, SpanMappingError, resolve_user_prompt_span
 from phase2_core.writer import write_phase2_outputs
-from utils import _as_embedding_list, _bitsandbytes_config, _to_model_inputs, interpret_difference_matrix
+from utils import (
+    _as_embedding_list,
+    _bitsandbytes_config,
+    _to_model_inputs,
+    collect_hidden_summaries,
+    interpret_difference_matrix,
+)
 
 
 class FakeTokenizer:
@@ -64,6 +71,35 @@ class BatchEncodingTensorLike:
     def to(self, device):
         self.input_ids = self.input_ids.to(device)
         return self
+
+
+class AddLayer(nn.Module):
+    def __init__(self, value):
+        super().__init__()
+        self.value = value
+
+    def forward(self, hidden_states):
+        return hidden_states + self.value
+
+
+class FakeBackbone(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.embed_tokens = nn.Embedding(16, 4)
+        self.layers = nn.ModuleList([AddLayer(1.0), AddLayer(2.0)])
+
+    def forward(self, input_ids, attention_mask=None, return_dict=True, output_hidden_states=False, use_cache=False):
+        hidden_states = self.embed_tokens(input_ids)
+        for layer in self.layers:
+            hidden_states = layer(hidden_states)
+        return {"last_hidden_state": hidden_states}
+
+
+class FakeSummaryModel(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.config = type("Config", (), {"num_hidden_layers": 2, "hidden_size": 4})()
+        self.model = FakeBackbone()
 
 
 def test_span_resolution_success_and_failures():
@@ -139,6 +175,13 @@ def test_phase2_writer_outputs_expected_schema():
                 "vocab_size": 128,
                 "dtype": "torch.float32",
                 "device": "cpu",
+                "quantization": "8bit",
+                "load_dtype": "bfloat16",
+                "compute_dtype": "bfloat16",
+                "quant_type": None,
+                "double_quant": None,
+                "device_map": "auto",
+                "trust_remote_code": False,
                 "extraction_version": "test",
             },
             groups,
@@ -183,6 +226,10 @@ def test_phase2_writer_outputs_expected_schema():
 
         scores = pd.read_parquet(out_dir / "jbshield_scores.parquet")
         assert list(scores["prompt_id"]) == ["fake:test_gcg:0"]
+
+        metadata = pd.read_parquet(out_dir / "model_metadata.parquet")
+        assert metadata.loc[0, "quantization"] == "8bit"
+        assert metadata.loc[0, "device_map"] == "auto"
 
         hidden_last = load_file(str(out_dir / "hidden_last.safetensors"))["hidden_last"]
         assert tuple(hidden_last.shape) == (1, 2, 3)
@@ -240,6 +287,27 @@ def test_interpret_difference_matrix_accepts_single_embedding_vectors():
     assert tuple(matrix_rows[0].shape) == (3584,)
 
 
+def test_collect_hidden_summaries_avoids_full_hidden_state_return():
+    model = FakeSummaryModel()
+    model_inputs = {"input_ids": torch.tensor([[1, 2, 3, 4]])}
+    summary = collect_hidden_summaries(
+        model,
+        model_inputs,
+        span=(1, 3),
+        last_k=2,
+        return_tail=True,
+        return_spans=True,
+        return_audit=True,
+    )
+    assert len(summary["last"]) == 3
+    assert len(summary["tail"]) == 3
+    assert len(summary["span"]) == 3
+    assert tuple(summary["last"][0].shape) == (4,)
+    assert tuple(summary["tail"][0].shape) == (2, 4)
+    assert tuple(summary["span"][0].shape) == (4,)
+    assert summary["audit"]["audit_scope"] == "captured_hidden_summaries"
+
+
 if __name__ == "__main__":
     test_span_resolution_success_and_failures()
     test_span_resolution_accepts_batch_encoding_like_tokenizer_output()
@@ -247,3 +315,4 @@ if __name__ == "__main__":
     test_bitsandbytes_quantization_config()
     test_model_input_normalization_accepts_tensor_and_batch_encoding_like()
     test_interpret_difference_matrix_accepts_single_embedding_vectors()
+    test_collect_hidden_summaries_avoids_full_hidden_state_return()

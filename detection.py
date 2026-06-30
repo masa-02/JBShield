@@ -647,6 +647,13 @@ def detection(
             "vocab_size": getattr(model.config, "vocab_size", None),
             "dtype": str(getattr(model, "dtype", "")),
             "device": str(getattr(model, "device", "")),
+            "quantization": str(model_loading.get("quantization", "none")).lower(),
+            "load_dtype": model_loading.get("dtype"),
+            "compute_dtype": model_loading.get("compute_dtype", model_loading.get("dtype")),
+            "quant_type": model_loading.get("quant_type"),
+            "double_quant": model_loading.get("double_quant"),
+            "device_map": str(model_loading.get("device_map", "")),
+            "trust_remote_code": model_loading.get("trust_remote_code"),
             "extraction_version": "jbshield-phase2-v1",
         }
         phase2_dir = write_phase2_outputs(

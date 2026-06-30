@@ -1,10 +1,10 @@
 # Qwen generation, scale, dense/MoE, and hybrid-version set.
+configs/runtime/qwen2.5-7b.yml
 configs/runtime/qwen2.5-7b-instruct.yml
+configs/runtime/qwen2.5-14b.yml
 configs/runtime/qwen2.5-14b-instruct.yml
+configs/runtime/qwen2.5-32b.yml
 configs/runtime/qwen2.5-32b-instruct.yml
 configs/runtime/qwen3-8b.yml
 configs/runtime/qwen3-14b.yml
 configs/runtime/qwen3-32b.yml
-configs/runtime/qwen3-30b-a3b-instruct-2507.yml
-configs/runtime/qwen3.5-27b.yml
-configs/runtime/qwen3.6-27b.yml
