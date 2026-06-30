@@ -1,0 +1,37 @@
+model:
+  name: qwen2.5-32b
+  path: Qwen/Qwen2.5-32B
+  chat_template: raw
+model_loading:
+  quantization: 4bit
+  dtype: bfloat16
+  compute_dtype: bfloat16
+  device_map: auto
+  quant_type: nf4
+  double_quant: true
+  low_cpu_mem_usage: true
+  offload_state_dict: true
+  use_safetensors: true
+data:
+  jailbreak_model_name: llama-3
+  harmful_calibration: data/harmful_calibration.csv
+  harmless_calibration: data/harmless_calibration.csv
+  harmful_test: data/harmful_test.csv
+  harmless_test: data/harmless_test.csv
+runtime:
+  output_dir: result
+  seed: 0
+audit:
+  enabled: true
+  run_id: qwen2.5-32b-phase1
+detection:
+  update_vectors: false
+  jailbreaks: [ijp, gcg, saa, autodan, pair, drattack, puzzler, zulu, base64]
+cache:
+  hidden_states: false   # set true to persist per-prompt hidden states under `dir`
+  dir: representations
+  last_k: 5
+phase2:
+  enabled: false
+  output_dir: outputs/phase2
+  strict_spans: false

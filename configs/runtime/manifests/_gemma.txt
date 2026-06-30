@@ -6,3 +6,4 @@ configs/runtime/gemma-3-12b-it.yml
 configs/runtime/gemma-3-27b-it.yml
 configs/runtime/gemma-4-12b-it.yml
 configs/runtime/gemma-4-31b-it.yml
+configs/runtime/gemma-4-26b-a4b-it.yml
