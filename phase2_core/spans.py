@@ -1,3 +1,6 @@
+from collections.abc import Mapping
+
+
 class SpanMappingError(ValueError):
     pass
 
@@ -7,6 +10,10 @@ class AmbiguousSpanError(SpanMappingError):
 
 
 def _as_list(ids):
+    if isinstance(ids, Mapping):
+        ids = ids["input_ids"]
+    elif hasattr(ids, "input_ids"):
+        ids = ids.input_ids
     if hasattr(ids, "tolist"):
         ids = ids.tolist()
     if ids and isinstance(ids[0], list):
@@ -36,7 +43,7 @@ def _tokenize_text_variants(tokenizer, text):
                 add_special_tokens=add_special_tokens,
                 return_tensors=None,
             )
-            ids = encoded["input_ids"] if isinstance(encoded, dict) else encoded
+            ids = encoded["input_ids"] if "input_ids" in encoded else encoded
             ids = _as_list(ids)
             if ids and ids not in variants:
                 variants.append(ids)

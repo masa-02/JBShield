@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from phase2_core.spans import AmbiguousSpanError, SpanMappingError, resolve_user_prompt_span
 from phase2_core.writer import write_phase2_outputs
-from utils import _bitsandbytes_config
+from utils import _bitsandbytes_config, _to_model_inputs
 
 
 class FakeTokenizer:
@@ -25,6 +25,45 @@ class FakeTokenizer:
         if add_special_tokens:
             return [1] + ids + [2]
         return ids
+
+
+class BatchEncodingLike:
+    def __init__(self, input_ids):
+        self.input_ids = input_ids
+
+    def __contains__(self, key):
+        return key == "input_ids"
+
+    def __getitem__(self, key):
+        if key != "input_ids":
+            raise KeyError(key)
+        return self.input_ids
+
+
+class FakeBatchEncodingTokenizer(FakeTokenizer):
+    def __call__(self, text, add_special_tokens=False, return_tensors=None):
+        ids = self.encode(text, add_special_tokens=add_special_tokens)
+        return BatchEncodingLike(ids)
+
+
+class BatchEncodingTensorLike:
+    def __init__(self, input_ids):
+        self.input_ids = input_ids
+
+    def __contains__(self, key):
+        return key == "input_ids"
+
+    def __getitem__(self, key):
+        if key != "input_ids":
+            raise KeyError(key)
+        return self.input_ids
+
+    def keys(self):
+        return ["input_ids"]
+
+    def to(self, device):
+        self.input_ids = self.input_ids.to(device)
+        return self
 
 
 def test_span_resolution_success_and_failures():
@@ -49,6 +88,15 @@ def test_span_resolution_success_and_failures():
         pass
     else:
         raise AssertionError("missing span should raise")
+
+
+def test_span_resolution_accepts_batch_encoding_like_tokenizer_output():
+    tokenizer = FakeBatchEncodingTokenizer()
+    input_ids = tokenizer.encode("prefix hello suffix", add_special_tokens=False)
+    span = resolve_user_prompt_span(input_ids, tokenizer, "hello", strict=True)
+    assert span["source"] == "subsequence"
+    assert span["start"] == len("prefix ")
+    assert span["end"] == len("prefix hello")
 
 
 def test_phase2_writer_outputs_expected_schema():
@@ -163,7 +211,20 @@ def test_bitsandbytes_quantization_config():
     assert int4_config.bnb_4bit_use_double_quant is True
 
 
+def test_model_input_normalization_accepts_tensor_and_batch_encoding_like():
+    tensor_inputs = _to_model_inputs(torch.tensor([[1, 2, 3]]), torch.device("cpu"))
+    assert set(tensor_inputs) == {"input_ids"}
+    assert tuple(tensor_inputs["input_ids"].shape) == (1, 3)
+
+    batch_inputs = BatchEncodingTensorLike(torch.tensor([[4, 5]]))
+    normalized = _to_model_inputs(batch_inputs, torch.device("cpu"))
+    assert normalized is batch_inputs
+    assert tuple(normalized["input_ids"].shape) == (1, 2)
+
+
 if __name__ == "__main__":
     test_span_resolution_success_and_failures()
+    test_span_resolution_accepts_batch_encoding_like_tokenizer_output()
     test_phase2_writer_outputs_expected_schema()
     test_bitsandbytes_quantization_config()
+    test_model_input_normalization_accepts_tensor_and_batch_encoding_like()

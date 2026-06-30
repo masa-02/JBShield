@@ -201,6 +201,15 @@ def load_model(model_name, model_paths, model_loading=None):
     return model, tokenizer
 
 
+def _to_model_inputs(encoded, device):
+    """Normalize tokenizer output to kwargs accepted by HF model.forward."""
+    if hasattr(encoded, "to"):
+        encoded = encoded.to(device)
+    if isinstance(encoded, dict) or hasattr(encoded, "keys"):
+        return encoded
+    return {"input_ids": encoded.to(device) if hasattr(encoded, "to") else encoded}
+
+
 def get_judge_scores(target_model_name, judge_model, judge_tokenizer, question, answer):
     """
     Get the judge scores for a given question and answer with mistral-sorry-bench model.
@@ -333,24 +342,23 @@ def get_input_ids(model, model_name, tokenizer, prompt, chat_template=None):
         if not hasattr(tokenizer, "apply_chat_template"):
             raise ValueError(f"Tokenizer for {model_name} does not support apply_chat_template")
         messages = [{"role": "user", "content": prompt}]
-        input_ids = tokenizer.apply_chat_template(
+        encoded = tokenizer.apply_chat_template(
             messages,
             add_generation_prompt=True,
             return_tensors="pt",
             tokenize=True,
         )
-        return {"input_ids": input_ids.to(model.device)}
+        return _to_model_inputs(encoded, model.device)
 
     if chat_template == "raw":
-        return tokenizer([prompt], return_tensors="pt").to(model.device)
+        return _to_model_inputs(tokenizer([prompt], return_tensors="pt"), model.device)
 
     # Fastchat cannot correctly load the chat template for some newer models.
     template_name = chat_template or model_name
     conv = get_conversation_template(template_name)
     conv.append_message(conv.roles[0], prompt)
     conv.append_message(conv.roles[1], None)
-    input_ids = tokenizer([conv.get_prompt()], return_tensors="pt").to(model.device)
-    return input_ids
+    return _to_model_inputs(tokenizer([conv.get_prompt()], return_tensors="pt"), model.device)
 
 
 def get_output_prompt(
