@@ -1,6 +1,10 @@
 model:
   name: llama-2
   path: ./models/Llama-2-7b-chat-hf
+model_loading:
+  quantization: 8bit
+  dtype: bfloat16
+  device_map: auto
 data:
   jailbreak_model_name: llama-2
   harmful_calibration: data/harmful_calibration.csv

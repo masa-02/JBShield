@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from phase2_core.spans import AmbiguousSpanError, SpanMappingError, resolve_user_prompt_span
 from phase2_core.writer import write_phase2_outputs
+from utils import _bitsandbytes_config
 
 
 class FakeTokenizer:
@@ -142,6 +143,27 @@ def test_phase2_writer_outputs_expected_schema():
         assert set(concept_vectors) == {"toxic", "jailbreak__gcg"}
 
 
+def test_bitsandbytes_quantization_config():
+    assert _bitsandbytes_config({"quantization": "none"}) is None
+
+    int8_config = _bitsandbytes_config({"quantization": "8bit"})
+    assert int8_config.load_in_8bit is True
+    assert int8_config.load_in_4bit is False
+
+    int4_config = _bitsandbytes_config(
+        {
+            "quantization": "4bit",
+            "compute_dtype": "bfloat16",
+            "quant_type": "nf4",
+            "double_quant": True,
+        }
+    )
+    assert int4_config.load_in_4bit is True
+    assert int4_config.bnb_4bit_quant_type == "nf4"
+    assert int4_config.bnb_4bit_use_double_quant is True
+
+
 if __name__ == "__main__":
     test_span_resolution_success_and_failures()
     test_phase2_writer_outputs_expected_schema()
+    test_bitsandbytes_quantization_config()

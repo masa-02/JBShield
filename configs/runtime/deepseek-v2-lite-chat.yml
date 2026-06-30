@@ -2,6 +2,14 @@ model:
   name: deepseek-v2-lite-chat
   path: deepseek-ai/DeepSeek-V2-Lite-Chat
   chat_template: hf
+model_loading:
+  quantization: 4bit
+  dtype: bfloat16
+  compute_dtype: bfloat16
+  device_map: auto
+  quant_type: nf4
+  double_quant: true
+  trust_remote_code: false
 data:
   jailbreak_model_name: llama-3
   harmful_calibration: data/harmful_calibration.csv

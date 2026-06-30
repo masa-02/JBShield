@@ -4,6 +4,7 @@ Utility functions for JBShield.
 
 import gc
 import json
+from importlib.metadata import PackageNotFoundError
 import numpy as np
 import pandas as pd
 import torch
@@ -73,6 +74,67 @@ def _hub_kwargs(loading_config):
     return kwargs
 
 
+def _bitsandbytes_config(loading_config):
+    loading_config = loading_config or {}
+    quantization = str(loading_config.get("quantization", "none")).lower()
+    if quantization in {"none", "no", "false", "0", "16bit", "bf16", "fp16"}:
+        return None
+
+    try:
+        from transformers import BitsAndBytesConfig
+    except ImportError as exc:
+        raise ImportError(
+            "Transformers BitsAndBytesConfig is required for quantized model loading. "
+            "Install dependencies with `uv sync`."
+        ) from exc
+
+    if quantization in {"8bit", "int8", "8"}:
+        try:
+            return BitsAndBytesConfig(
+                load_in_8bit=True,
+                llm_int8_enable_fp32_cpu_offload=bool(
+                    loading_config.get("llm_int8_enable_fp32_cpu_offload", False)
+                ),
+            )
+        except PackageNotFoundError as exc:
+            raise ModuleNotFoundError(
+                "bitsandbytes is required for 8bit model loading. Run `uv sync` "
+                "after updating pyproject.toml."
+            ) from exc
+
+    if quantization in {"4bit", "nf4", "int4", "4"}:
+        try:
+            return BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_compute_dtype=_dtype_from_name(
+                    loading_config.get("compute_dtype", loading_config.get("dtype", "bfloat16"))
+                ),
+                bnb_4bit_quant_type=str(loading_config.get("quant_type", "nf4")),
+                bnb_4bit_use_double_quant=bool(loading_config.get("double_quant", True)),
+            )
+        except PackageNotFoundError as exc:
+            raise ModuleNotFoundError(
+                "bitsandbytes is required for 4bit model loading. Run `uv sync` "
+                "after updating pyproject.toml."
+            ) from exc
+
+    raise ValueError(f"Unsupported quantization mode: {loading_config.get('quantization')}")
+
+
+def _tokenizer_kwargs_for_model(model_name, model_path, loading_config):
+    model_key = f"{model_name} {model_path}".lower()
+    kwargs = {"trust_remote_code": True, "use_fast": False}
+    kwargs.update(_hub_kwargs(loading_config))
+
+    if "mistral" in model_key:
+        kwargs["fix_mistral_regex"] = True
+
+    if "gemma-4" in model_key or "gemma4" in model_key:
+        kwargs["extra_special_tokens"] = {"video_token": "<|video|>"}
+
+    return kwargs
+
+
 def load_model(model_name, model_paths, model_loading=None):
     """
     Load a model and tokenizer.
@@ -94,6 +156,8 @@ def load_model(model_name, model_paths, model_loading=None):
             f"Model name {model_name} not recognized. Please choose from {list(model_paths.keys())}"
         )
 
+    model_key = f"{model_name} {model_path}".lower()
+    quantization_config = _bitsandbytes_config(model_loading)
     model_kwargs = {
         "trust_remote_code": True,
         "device_map": model_loading.get("device_map", "auto"),
@@ -101,7 +165,24 @@ def load_model(model_name, model_paths, model_loading=None):
     dtype = _dtype_from_name(model_loading.get("dtype", "float16"))
     if dtype is not None:
         model_kwargs["dtype"] = dtype
+    if quantization_config is not None:
+        model_kwargs["quantization_config"] = quantization_config
     model_kwargs.update(_hub_kwargs(model_loading))
+    for key in (
+        "low_cpu_mem_usage",
+        "offload_folder",
+        "offload_state_dict",
+        "max_memory",
+        "use_safetensors",
+    ):
+        if key in model_loading and model_loading[key] is not None:
+            model_kwargs[key] = model_loading[key]
+
+    if "deepseek-v2" in model_key or "deepseek_v2" in model_key:
+        model_kwargs["trust_remote_code"] = False
+
+    if "trust_remote_code" in model_loading and model_loading["trust_remote_code"] is not None:
+        model_kwargs["trust_remote_code"] = bool(model_loading["trust_remote_code"])
 
     model = AutoModelForCausalLM.from_pretrained(
         model_path,
@@ -109,8 +190,7 @@ def load_model(model_name, model_paths, model_loading=None):
         **model_kwargs,
     ).eval()
 
-    tokenizer_kwargs = {"trust_remote_code": True, "use_fast": False}
-    tokenizer_kwargs.update(_hub_kwargs(model_loading))
+    tokenizer_kwargs = _tokenizer_kwargs_for_model(model_name, model_path, model_loading)
     tokenizer = AutoTokenizer.from_pretrained(
         model_path, **tokenizer_kwargs
     )

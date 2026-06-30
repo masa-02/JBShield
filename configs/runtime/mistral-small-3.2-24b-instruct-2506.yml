@@ -2,6 +2,13 @@ model:
   name: mistral-small-3.2-24b-instruct-2506
   path: mistralai/Mistral-Small-3.2-24B-Instruct-2506
   chat_template: hf
+model_loading:
+  quantization: 4bit
+  dtype: bfloat16
+  compute_dtype: bfloat16
+  device_map: auto
+  quant_type: nf4
+  double_quant: true
 data:
   jailbreak_model_name: llama-3
   harmful_calibration: data/harmful_calibration.csv

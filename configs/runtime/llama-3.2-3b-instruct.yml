@@ -2,6 +2,10 @@ model:
   name: llama-3.2-3b-instruct
   path: meta-llama/Llama-3.2-3B-Instruct
   chat_template: hf
+model_loading:
+  quantization: none
+  dtype: bfloat16
+  device_map: cuda
 data:
   jailbreak_model_name: llama-3
   harmful_calibration: data/harmful_calibration.csv

@@ -2,6 +2,10 @@ model:
   name: qwen3-14b
   path: Qwen/Qwen3-14B
   chat_template: hf
+model_loading:
+  quantization: 8bit
+  dtype: bfloat16
+  device_map: auto
 data:
   jailbreak_model_name: llama-3
   harmful_calibration: data/harmful_calibration.csv

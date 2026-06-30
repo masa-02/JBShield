@@ -1,6 +1,10 @@
 model:
   name: vicuna-13b
   path: ./models/vicuna-13b-v1.5
+model_loading:
+  quantization: 8bit
+  dtype: bfloat16
+  device_map: auto
 data:
   jailbreak_model_name: vicuna-13b
   harmful_calibration: data/harmful_calibration.csv
