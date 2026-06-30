@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from phase2_core.spans import AmbiguousSpanError, SpanMappingError, resolve_user_prompt_span
 from phase2_core.writer import write_phase2_outputs
-from utils import _bitsandbytes_config, _to_model_inputs
+from utils import _as_embedding_list, _bitsandbytes_config, _to_model_inputs, interpret_difference_matrix
 
 
 class FakeTokenizer:
@@ -222,9 +222,28 @@ def test_model_input_normalization_accepts_tensor_and_batch_encoding_like():
     assert tuple(normalized["input_ids"].shape) == (1, 2)
 
 
+def test_interpret_difference_matrix_accepts_single_embedding_vectors():
+    first = torch.arange(3584, dtype=torch.float32)
+    second = torch.zeros(3584, dtype=torch.float32)
+    vector, delta = interpret_difference_matrix(
+        None,
+        None,
+        first,
+        second,
+        return_tokens=False,
+    )
+    assert tuple(vector.shape) == (3584,)
+    assert delta.ndim == 0
+
+    matrix_rows = _as_embedding_list(torch.stack([first, second]))
+    assert len(matrix_rows) == 2
+    assert tuple(matrix_rows[0].shape) == (3584,)
+
+
 if __name__ == "__main__":
     test_span_resolution_success_and_failures()
     test_span_resolution_accepts_batch_encoding_like_tokenizer_output()
     test_phase2_writer_outputs_expected_schema()
     test_bitsandbytes_quantization_config()
     test_model_input_normalization_accepts_tensor_and_batch_encoding_like()
+    test_interpret_difference_matrix_accepts_single_embedding_vectors()

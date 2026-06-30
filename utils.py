@@ -530,7 +530,7 @@ def get_sentence_embeddings(
                 audit["total_hidden_state_values"] += int(detached.numel())
 
             # Last token embedding for the current layer
-            embeddings_last_token[i].append(layer_output[:, -1, :].squeeze().cpu())
+            embeddings_last_token[i].append(layer_output[0, -1, :].detach().cpu())
 
             if return_tail:
                 # Trailing last_k token embeddings, front-padded to [last_k, d]
@@ -628,6 +628,16 @@ def get_difference_matrix(embeddings1, embeddings2):
     return difference_matrix
 
 
+def _as_embedding_list(embeddings):
+    if torch.is_tensor(embeddings):
+        if embeddings.ndim == 1:
+            return [embeddings]
+        if embeddings.ndim == 2:
+            return [row for row in embeddings]
+        raise ValueError(f"Expected 1D or 2D embedding tensor, got shape {tuple(embeddings.shape)}")
+    return list(embeddings)
+
+
 def get_svd(difference_matrix):
     """
     Get the SVD of the difference matrix
@@ -666,13 +676,11 @@ def interpret_difference_matrix(
     - v: vector that interprets the difference matrix the most
     - delta: projected mean difference
     """
+    embeddings1 = _as_embedding_list(embeddings1)
+    embeddings2 = _as_embedding_list(embeddings2)
     difference_matrix = get_difference_matrix(embeddings1, embeddings2)
     _, S, V = get_svd(difference_matrix)
     v = V[:, 0].cpu()
-    if len(embeddings1) == 4096 or len(embeddings1) == 5120:
-        embeddings1 = [embeddings1]
-    if len(embeddings2) == 4096 or len(embeddings2) == 5120:
-        embeddings2 = [embeddings2]
     mu_1 = torch.mean(torch.stack([torch.dot(x.float().cpu(), v) for x in embeddings1]))
     mu_2 = torch.mean(torch.stack([torch.dot(x.float().cpu(), v) for x in embeddings2]))
     delta = mu_1 - mu_2
