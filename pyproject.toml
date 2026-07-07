@@ -7,6 +7,7 @@ dependencies = [
   "accelerate==1.14.0",
   "bitsandbytes==0.49.2",
   "fschat",
+  "matplotlib",
   "nltk",
   "numpy",
   "pandas",
