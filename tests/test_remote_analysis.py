@@ -148,12 +148,33 @@ def test_remote_analysis_writes_compact_tables():
             encoding="utf-8",
         )
 
+        behavior_path = root / "behavior_labels.csv"
+        pd.DataFrame(
+            [
+                {
+                    "prompt_id": "qwen-test:test_gcg:0",
+                    "attack_family": "gcg",
+                    "jailbreak_success": 1,
+                    "refusal": 0,
+                    "judge_score": 1.0,
+                },
+                {
+                    "prompt_id": "qwen-test:test_gcg:1",
+                    "attack_family": "gcg",
+                    "jailbreak_success": 0,
+                    "refusal": 1,
+                    "judge_score": 0.0,
+                },
+            ]
+        ).to_csv(behavior_path, index=False)
+
         output_dir = root / "analysis"
         summary = analyze_remote_artifacts(
             phase2_root=phase2_root,
             result_root=result_root,
             output_dir=output_dir,
             run_prefixes=["qwen-smoke"],
+            behavior_label_paths=[behavior_path],
             hidden_analysis=True,
             export_csv=True,
         )
@@ -162,6 +183,7 @@ def test_remote_analysis_writes_compact_tables():
         assert summary["num_result_summaries"] == 1
         assert (output_dir / "summary.md").exists()
         assert (output_dir / "tables" / "score_metrics.csv").exists()
+        assert (output_dir / "tables" / "sample_scores.csv").exists()
 
         runs = pd.read_parquet(output_dir / "runs.parquet")
         assert runs.loc[0, "model_name"] == "qwen-test"
@@ -171,12 +193,29 @@ def test_remote_analysis_writes_compact_tables():
         assert score_metrics.loc[0, "attack_family"] == "gcg"
         assert score_metrics.loc[0, "recall"] == 0.5
 
+        sample_scores = pd.read_parquet(output_dir / "sample_scores.parquet")
+        assert {"toxic_margin", "jailbreak_margin", "error_type"} <= set(sample_scores.columns)
+        assert set(sample_scores["error_type"]) == {"tp", "fn"}
+
+        error_analysis = pd.read_parquet(output_dir / "score_error_analysis.parquet")
+        assert {"tp", "fn"} <= set(error_analysis["error_type"])
+
         hidden_metrics = pd.read_parquet(output_dir / "hidden_layer_metrics.parquet")
         assert {"last_token", "user_prompt"} <= set(hidden_metrics["source"])
         assert "attack_vs_harmless" in set(hidden_metrics["comparison"])
 
+        hidden_summary = pd.read_parquet(output_dir / "hidden_source_summary.parquet")
+        assert {"last_token", "user_prompt"} <= set(hidden_summary["source"])
+
         vector_cosine = pd.read_parquet(output_dir / "concept_vector_cosine.parquet")
         assert {"toxic", "jailbreak__gcg"} <= set(vector_cosine["vector_a"]) | set(vector_cosine["vector_b"])
+
+        behavior_coverage = pd.read_parquet(output_dir / "behavior_coverage.parquet")
+        assert behavior_coverage.loc[0, "num_behavior_matched"] == 2
+
+        behavior_metrics = pd.read_parquet(output_dir / "behavior_detection_metrics.parquet")
+        assert behavior_metrics.loc[0, "behavior_target"] == "jailbreak_success"
+        assert behavior_metrics.loc[0, "f1"] == 1.0
 
 
 if __name__ == "__main__":

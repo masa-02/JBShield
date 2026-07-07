@@ -33,11 +33,19 @@ class AnalysisState:
     artifact_manifest: list[dict] = field(default_factory=list)
     score_metrics: list[dict] = field(default_factory=list)
     score_distributions: list[dict] = field(default_factory=list)
+    sample_scores: list[dict] = field(default_factory=list)
+    score_error_analysis: list[dict] = field(default_factory=list)
     thresholds: list[dict] = field(default_factory=list)
     concept_stats: list[dict] = field(default_factory=list)
+    critical_layer_summary: list[dict] = field(default_factory=list)
     concept_vector_cosine: list[dict] = field(default_factory=list)
     span_quality: list[dict] = field(default_factory=list)
     hidden_layer_metrics: list[dict] = field(default_factory=list)
+    hidden_source_summary: list[dict] = field(default_factory=list)
+    phase2_behavior_labels: list[dict] = field(default_factory=list)
+    behavior_coverage: list[dict] = field(default_factory=list)
+    behavior_score_alignment: list[dict] = field(default_factory=list)
+    behavior_detection_metrics: list[dict] = field(default_factory=list)
     result_summaries: list[dict] = field(default_factory=list)
 
 
@@ -85,11 +93,18 @@ def _state_frames(state):
         "artifact_manifest": pd.DataFrame(state.artifact_manifest),
         "score_metrics": pd.DataFrame(state.score_metrics),
         "score_distributions": pd.DataFrame(state.score_distributions),
+        "sample_scores": pd.DataFrame(state.sample_scores),
+        "score_error_analysis": pd.DataFrame(state.score_error_analysis),
         "thresholds": pd.DataFrame(state.thresholds),
         "concept_stats": pd.DataFrame(state.concept_stats),
+        "critical_layer_summary": pd.DataFrame(state.critical_layer_summary),
         "concept_vector_cosine": pd.DataFrame(state.concept_vector_cosine),
         "span_quality": pd.DataFrame(state.span_quality),
         "hidden_layer_metrics": pd.DataFrame(state.hidden_layer_metrics),
+        "hidden_source_summary": pd.DataFrame(state.hidden_source_summary),
+        "behavior_coverage": pd.DataFrame(state.behavior_coverage),
+        "behavior_score_alignment": pd.DataFrame(state.behavior_score_alignment),
+        "behavior_detection_metrics": pd.DataFrame(state.behavior_detection_metrics),
         "result_summaries": pd.DataFrame(state.result_summaries),
     }
 
@@ -128,6 +143,47 @@ def _column_or_default(df, column, default):
     if column in df:
         return df[column].fillna(default)
     return pd.Series([default] * len(df), index=df.index)
+
+
+def _json_loads_maybe(value):
+    if isinstance(value, dict):
+        return value
+    if value is None:
+        return {}
+    try:
+        if pd.isna(value):
+            return {}
+    except TypeError:
+        pass
+    if isinstance(value, str) and value.strip():
+        try:
+            payload = json.loads(value)
+            return payload if isinstance(payload, dict) else {}
+        except json.JSONDecodeError:
+            return {}
+    return {}
+
+
+def _error_type(label, prediction):
+    try:
+        label = int(label)
+        prediction = int(prediction)
+    except (TypeError, ValueError):
+        return "unknown"
+    if label == 1 and prediction == 1:
+        return "tp"
+    if label == 0 and prediction == 1:
+        return "fp"
+    if label == 1 and prediction == 0:
+        return "fn"
+    if label == 0 and prediction == 0:
+        return "tn"
+    return "unknown"
+
+
+def _safe_min(values):
+    values = [value for value in values if value is not None and not pd.isna(value)]
+    return min(values) if values else None
 
 
 def _classification_metrics(scores):
@@ -235,6 +291,61 @@ def _append_score_tables(run_dir, run_id, model_name, state):
     scores = scores.copy()
     scores["attack_family"] = _column_or_default(scores, "attack_family", "unknown")
     scores["split"] = _column_or_default(scores, "split", "unknown")
+    scores["label"] = _column_or_default(scores, "label", 0).astype(int)
+    scores["prediction"] = _column_or_default(scores, "prediction", 0).astype(int)
+
+    prompt_metadata = _read_parquet(run_dir / "prompts.parquet", state)
+    if not prompt_metadata.empty and "prompt_id" in prompt_metadata:
+        keep_columns = [
+            column
+            for column in ("prompt_id", "base_request_id", "source_group", "prompt_index", "task_type")
+            if column in prompt_metadata.columns
+        ]
+        scores = scores.merge(
+            prompt_metadata[keep_columns].drop_duplicates("prompt_id"),
+            on="prompt_id",
+            how="left",
+        )
+
+    enriched_rows = []
+    for row in scores.to_dict(orient="records"):
+        thresholds = _json_loads_maybe(row.get("thresholds_json"))
+        layers = _json_loads_maybe(row.get("layers_json"))
+        toxic_threshold = _as_float(thresholds.get("toxic"))
+        jailbreak_threshold = _as_float(thresholds.get("jailbreak"))
+        toxic_score = _as_float(row.get("toxic_score"))
+        jailbreak_score = _as_float(row.get("jailbreak_score"))
+        toxic_margin = None if toxic_score is None or toxic_threshold is None else toxic_score - toxic_threshold
+        jailbreak_margin = (
+            None
+            if jailbreak_score is None or jailbreak_threshold is None
+            else jailbreak_score - jailbreak_threshold
+        )
+        enriched = {
+            "run_id": run_id,
+            "model_name": model_name,
+            "score_id": row.get("id"),
+            "prompt_id": row.get("prompt_id"),
+            "base_request_id": row.get("base_request_id"),
+            "source_group": row.get("source_group"),
+            "prompt_index": row.get("prompt_index"),
+            "split": row.get("split"),
+            "attack_family": row.get("attack_family"),
+            "label": int(row.get("label", 0)),
+            "prediction": int(row.get("prediction", 0)),
+            "error_type": _error_type(row.get("label"), row.get("prediction")),
+            "toxic_score": toxic_score,
+            "jailbreak_score": jailbreak_score,
+            "toxic_threshold": toxic_threshold,
+            "jailbreak_threshold": jailbreak_threshold,
+            "toxic_margin": toxic_margin,
+            "jailbreak_margin": jailbreak_margin,
+            "min_margin": _safe_min([toxic_margin, jailbreak_margin]),
+            "toxic_layer": layers.get("toxic"),
+            "jailbreak_layer": layers.get("jailbreak"),
+        }
+        enriched_rows.append(enriched)
+        state.sample_scores.append(enriched)
 
     for (split, family), group in scores.groupby(["split", "attack_family"], dropna=False):
         metrics = _classification_metrics(group)
@@ -280,6 +391,37 @@ def _append_calibration_tables(run_dir, run_id, model_name, state):
         for row in concept_stats.to_dict(orient="records"):
             row.update({"run_id": run_id, "model_name": model_name})
             state.concept_stats.append(row)
+
+
+def _append_phase2_behavior_labels(labels, run_id, model_name, state):
+    if labels.empty:
+        return
+    behavior_columns = [
+        column
+        for column in ("jailbreak_success", "refusal", "judge_score", "output_text")
+        if column in labels.columns
+    ]
+    if not behavior_columns:
+        return
+    labeled = labels.copy()
+    has_behavior = labeled[behavior_columns].notna().any(axis=1)
+    labeled = labeled[has_behavior]
+    if labeled.empty:
+        return
+    keep_columns = [
+        column
+        for column in ("prompt_id", "attack_family", "jailbreak_success", "refusal", "judge_score", "output_text")
+        if column in labeled.columns
+    ]
+    for row in labeled[keep_columns].to_dict(orient="records"):
+        row.update(
+            {
+                "run_id": run_id,
+                "model_name": model_name,
+                "behavior_source_path": f"{run_id}:behavior_labels.parquet",
+            }
+        )
+        state.phase2_behavior_labels.append(row)
 
 
 def _append_span_quality(run_dir, run_id, model_name, state):
@@ -519,6 +661,322 @@ def _append_result_summary(path, state):
     )
 
 
+def _table_from_path(path):
+    path = Path(path)
+    suffix = path.suffix.lower()
+    if suffix == ".parquet":
+        return pd.read_parquet(path)
+    if suffix == ".csv":
+        return pd.read_csv(path)
+    if suffix == ".jsonl":
+        return pd.read_json(path, lines=True)
+    if suffix == ".json":
+        payload = _read_json(path)
+        if isinstance(payload, list):
+            return pd.DataFrame(payload)
+        if isinstance(payload, dict):
+            for key in ("rows", "records", "data", "labels"):
+                if isinstance(payload.get(key), list):
+                    return pd.DataFrame(payload[key])
+            return pd.DataFrame([payload])
+    raise ValueError(f"Unsupported behavior label format: {path}")
+
+
+def _load_behavior_labels(paths, state):
+    frames = []
+    for path in paths or []:
+        try:
+            frame = _table_from_path(path)
+        except Exception as exc:
+            state.warnings.append(f"failed to read behavior labels {path}: {exc}")
+            continue
+        if frame.empty:
+            state.warnings.append(f"empty behavior labels: {path}")
+            continue
+        frame = frame.copy()
+        frame["behavior_source_path"] = str(path)
+        if "id" in frame.columns and "score_id" not in frame.columns:
+            frame["score_id"] = frame["id"]
+        frames.append(frame)
+    if not frames:
+        return pd.DataFrame()
+    return pd.concat(frames, ignore_index=True, sort=False)
+
+
+def _combine_behavior_labels(phase2_rows, external_labels):
+    frames = []
+    phase2_frame = pd.DataFrame(phase2_rows)
+    if not phase2_frame.empty:
+        frames.append(phase2_frame)
+    if external_labels is not None and not external_labels.empty:
+        frames.append(external_labels)
+    if not frames:
+        return pd.DataFrame()
+    return pd.concat(frames, ignore_index=True, sort=False)
+
+
+def _normalize_bool_value(value):
+    if value is None:
+        return None
+    try:
+        if pd.isna(value):
+            return None
+    except TypeError:
+        pass
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, (int, float)):
+        return int(value != 0)
+    normalized = str(value).strip().lower()
+    if normalized in {"1", "true", "yes", "y", "success", "succeeded", "refusal", "refused"}:
+        return 1
+    if normalized in {"0", "false", "no", "n", "failed", "failure", "non_refusal", "not_refused"}:
+        return 0
+    return None
+
+
+def _normalize_behavior_frame(frame):
+    if frame.empty:
+        return frame
+    frame = frame.copy()
+    for column in ("jailbreak_success", "refusal"):
+        if column in frame.columns:
+            frame[column] = frame[column].map(_normalize_bool_value)
+    if "judge_score" in frame.columns:
+        frame["judge_score"] = pd.to_numeric(frame["judge_score"], errors="coerce")
+    return frame
+
+
+def _merge_behavior(sample_scores, behavior_labels):
+    if sample_scores.empty or behavior_labels.empty:
+        return pd.DataFrame(), None
+    sample_scores = sample_scores.copy()
+    behavior_labels = _normalize_behavior_frame(behavior_labels)
+    key_sets = [
+        ["run_id", "score_id"],
+        ["run_id", "prompt_id", "attack_family"],
+        ["model_name", "prompt_id", "attack_family"],
+        ["prompt_id", "attack_family"],
+        ["model_name", "prompt_id"],
+        ["prompt_id"],
+        ["model_name", "base_request_id", "attack_family"],
+        ["base_request_id", "attack_family"],
+    ]
+    behavior_columns = [
+        column
+        for column in (
+            "jailbreak_success",
+            "refusal",
+            "judge_score",
+            "output_text",
+            "behavior_source_path",
+        )
+        if column in behavior_labels.columns
+    ]
+    for keys in key_sets:
+        if not set(keys) <= set(sample_scores.columns) or not set(keys) <= set(behavior_labels.columns):
+            continue
+        right = behavior_labels[keys + behavior_columns].dropna(how="all", subset=keys)
+        if right.empty:
+            continue
+        right = right.drop_duplicates(keys)
+        merged = sample_scores.merge(right, on=keys, how="left")
+        matched_columns = [column for column in ("jailbreak_success", "refusal", "judge_score") if column in merged]
+        if any(merged[column].notna().any() for column in matched_columns):
+            merged["behavior_join_key"] = "+".join(keys)
+            return merged, "+".join(keys)
+    return pd.DataFrame(), None
+
+
+def _append_score_error_analysis(state):
+    samples = pd.DataFrame(state.sample_scores)
+    if samples.empty:
+        return
+    group_columns = ["model_name", "split", "attack_family", "error_type"]
+    for keys, group in samples.groupby(group_columns, dropna=False):
+        row = dict(zip(group_columns, keys))
+        row.update(
+            {
+                "num_samples": int(len(group)),
+                "prediction_rate": _as_float(group["prediction"].mean()),
+                "toxic_score_mean": _as_float(group["toxic_score"].mean()),
+                "jailbreak_score_mean": _as_float(group["jailbreak_score"].mean()),
+                "toxic_margin_mean": _as_float(group["toxic_margin"].mean()),
+                "jailbreak_margin_mean": _as_float(group["jailbreak_margin"].mean()),
+                "min_margin_mean": _as_float(group["min_margin"].mean()),
+                "toxic_margin_p10": _as_float(group["toxic_margin"].quantile(0.10)),
+                "toxic_margin_p90": _as_float(group["toxic_margin"].quantile(0.90)),
+                "jailbreak_margin_p10": _as_float(group["jailbreak_margin"].quantile(0.10)),
+                "jailbreak_margin_p90": _as_float(group["jailbreak_margin"].quantile(0.90)),
+            }
+        )
+        state.score_error_analysis.append(row)
+
+
+def _append_critical_layer_summary(state):
+    concept_stats = pd.DataFrame(state.concept_stats)
+    if concept_stats.empty:
+        return
+    required = {"model_name", "attack_family", "toxic_layer_normalized_depth", "jailbreak_layer_normalized_depth"}
+    if not required <= set(concept_stats.columns):
+        return
+    for model_name, group in concept_stats.groupby("model_name", dropna=False):
+        state.critical_layer_summary.append(
+            {
+                "summary_scope": "model",
+                "model_name": model_name,
+                "attack_family": "__all__",
+                "num_attack_families": int(group["attack_family"].nunique()),
+                "toxic_layer_mean": _as_float(group["toxic_layer"].mean()) if "toxic_layer" in group else None,
+                "jailbreak_layer_mean": _as_float(group["jailbreak_layer"].mean()) if "jailbreak_layer" in group else None,
+                "toxic_depth_mean": _as_float(group["toxic_layer_normalized_depth"].mean()),
+                "jailbreak_depth_mean": _as_float(group["jailbreak_layer_normalized_depth"].mean()),
+                "jailbreak_depth_std": _as_float(group["jailbreak_layer_normalized_depth"].std()),
+                "jailbreak_depth_min": _as_float(group["jailbreak_layer_normalized_depth"].min()),
+                "jailbreak_depth_max": _as_float(group["jailbreak_layer_normalized_depth"].max()),
+            }
+        )
+    for family, group in concept_stats.groupby("attack_family", dropna=False):
+        state.critical_layer_summary.append(
+            {
+                "summary_scope": "attack_family",
+                "model_name": "__all__",
+                "attack_family": family,
+                "num_models": int(group["model_name"].nunique()),
+                "toxic_depth_mean": _as_float(group["toxic_layer_normalized_depth"].mean()),
+                "jailbreak_depth_mean": _as_float(group["jailbreak_layer_normalized_depth"].mean()),
+                "jailbreak_depth_std": _as_float(group["jailbreak_layer_normalized_depth"].std()),
+                "jailbreak_depth_min": _as_float(group["jailbreak_layer_normalized_depth"].min()),
+                "jailbreak_depth_max": _as_float(group["jailbreak_layer_normalized_depth"].max()),
+            }
+        )
+
+
+def _append_hidden_source_summary(state):
+    metrics = pd.DataFrame(state.hidden_layer_metrics)
+    runs = pd.DataFrame(state.runs)
+    if metrics.empty or "centroid_cosine_divergence" not in metrics:
+        return
+    layer_counts = {}
+    if not runs.empty and {"model_name", "num_layers"} <= set(runs.columns):
+        for row in runs.to_dict(orient="records"):
+            try:
+                layer_counts[row["model_name"]] = int(row["num_layers"])
+            except (TypeError, ValueError):
+                pass
+    group_columns = ["model_name", "source", "comparison"]
+    for keys, group in metrics.groupby(group_columns, dropna=False):
+        group = group.dropna(subset=["centroid_cosine_divergence"])
+        if group.empty:
+            continue
+        idx = group["centroid_cosine_divergence"].idxmax()
+        peak = group.loc[idx]
+        num_layers = layer_counts.get(keys[0])
+        peak_layer = int(peak["layer"])
+        state.hidden_source_summary.append(
+            {
+                "model_name": keys[0],
+                "source": keys[1],
+                "comparison": keys[2],
+                "num_rows": int(len(group)),
+                "mean_divergence": _as_float(group["centroid_cosine_divergence"].mean()),
+                "max_divergence": _as_float(peak["centroid_cosine_divergence"]),
+                "max_layer": peak_layer,
+                "max_layer_normalized_depth": (
+                    peak_layer / float(num_layers - 1) if num_layers and num_layers > 1 else None
+                ),
+                "mean_left_norm": _as_float(group["left_norm"].mean()) if "left_norm" in group else None,
+                "mean_right_norm": _as_float(group["right_norm"].mean()) if "right_norm" in group else None,
+            }
+        )
+
+
+def _append_behavior_analysis(state, behavior_labels):
+    sample_scores = pd.DataFrame(state.sample_scores)
+    if behavior_labels is None or behavior_labels.empty:
+        return
+    merged, join_key = _merge_behavior(sample_scores, behavior_labels)
+    if sample_scores.empty:
+        return
+    behavior_columns = [column for column in ("jailbreak_success", "refusal", "judge_score") if column in merged]
+    if merged.empty or not behavior_columns:
+        state.behavior_coverage.append(
+            {
+                "join_key": join_key,
+                "num_sample_scores": int(len(sample_scores)),
+                "num_behavior_matched": 0,
+                "coverage": 0.0,
+            }
+        )
+        if behavior_labels is not None and not behavior_labels.empty:
+            state.warnings.append("behavior labels were provided but did not match sample scores")
+        return
+
+    has_behavior = merged[behavior_columns].notna().any(axis=1)
+    state.behavior_coverage.append(
+        {
+            "join_key": join_key,
+            "num_sample_scores": int(len(sample_scores)),
+            "num_behavior_matched": int(has_behavior.sum()),
+            "coverage": _as_float(has_behavior.mean()),
+            "jailbreak_success_labels": int(merged["jailbreak_success"].notna().sum())
+            if "jailbreak_success" in merged
+            else 0,
+            "refusal_labels": int(merged["refusal"].notna().sum()) if "refusal" in merged else 0,
+            "judge_score_labels": int(merged["judge_score"].notna().sum()) if "judge_score" in merged else 0,
+        }
+    )
+
+    for behavior_column in ("jailbreak_success", "refusal"):
+        if behavior_column not in merged:
+            continue
+        labeled = merged[merged[behavior_column].notna()].copy()
+        if labeled.empty:
+            continue
+        labeled[behavior_column] = labeled[behavior_column].astype(int)
+        for keys, group in labeled.groupby(["model_name", "attack_family", behavior_column], dropna=False):
+            state.behavior_score_alignment.append(
+                {
+                    "behavior_column": behavior_column,
+                    "model_name": keys[0],
+                    "attack_family": keys[1],
+                    "behavior_value": int(keys[2]),
+                    "num_samples": int(len(group)),
+                    "prediction_rate": _as_float(group["prediction"].mean()),
+                    "toxic_score_mean": _as_float(group["toxic_score"].mean()),
+                    "jailbreak_score_mean": _as_float(group["jailbreak_score"].mean()),
+                    "toxic_margin_mean": _as_float(group["toxic_margin"].mean()),
+                    "jailbreak_margin_mean": _as_float(group["jailbreak_margin"].mean()),
+                    "judge_score_mean": _as_float(group["judge_score"].mean()) if "judge_score" in group else None,
+                }
+            )
+        if behavior_column == "jailbreak_success":
+            for keys, group in labeled.groupby(["model_name", "attack_family"], dropna=False):
+                metrics = _classification_metrics(
+                    pd.DataFrame(
+                        {
+                            "label": group["jailbreak_success"].astype(int),
+                            "prediction": group["prediction"].astype(int),
+                        }
+                    )
+                )
+                state.behavior_detection_metrics.append(
+                    {
+                        "behavior_target": behavior_column,
+                        "model_name": keys[0],
+                        "attack_family": keys[1],
+                        **metrics,
+                    }
+                )
+
+
+def _append_derived_tables(state, behavior_labels):
+    _append_score_error_analysis(state)
+    _append_critical_layer_summary(state)
+    _append_hidden_source_summary(state)
+    _append_behavior_analysis(state, behavior_labels)
+
+
 def _load_matplotlib():
     try:
         import matplotlib
@@ -688,6 +1146,73 @@ def _plot_score_distribution_summary(score_distributions, figures_dir):
     return [path]
 
 
+def _plot_error_breakdown(score_error_analysis, figures_dir):
+    required = {"model_name", "error_type", "num_samples"}
+    if score_error_analysis.empty or not required <= set(score_error_analysis.columns):
+        return []
+    plt = _load_matplotlib()
+    frame = (
+        score_error_analysis.groupby(["model_name", "error_type"], dropna=False)["num_samples"]
+        .sum()
+        .reset_index()
+    )
+    if frame.empty:
+        return []
+    pivot = frame.pivot_table(
+        index="model_name",
+        columns="error_type",
+        values="num_samples",
+        aggfunc="sum",
+        fill_value=0,
+    )
+    ordered_columns = [column for column in ["tp", "fp", "fn", "tn", "unknown"] if column in pivot.columns]
+    pivot = pivot[ordered_columns]
+    fig_width = max(8.0, min(18.0, 0.75 * len(pivot.index) + 3.0))
+    fig, ax = plt.subplots(figsize=(fig_width, 5.5), constrained_layout=True)
+    bottom = [0] * len(pivot)
+    for column in pivot.columns:
+        values = pivot[column].to_numpy()
+        ax.bar(range(len(pivot.index)), values, bottom=bottom, label=column.upper())
+        bottom = [current + value for current, value in zip(bottom, values)]
+    ax.set_title("JBShield-D confusion breakdown by model")
+    ax.set_ylabel("Samples")
+    ax.set_xticks(range(len(pivot.index)))
+    ax.set_xticklabels([_short_label(value, 24) for value in pivot.index], rotation=45, ha="right")
+    ax.legend()
+    ax.grid(True, axis="y", alpha=0.3)
+    path = figures_dir / "confusion_breakdown_by_model.png"
+    figures_dir.mkdir(parents=True, exist_ok=True)
+    fig.savefig(path, dpi=180)
+    plt.close(fig)
+    return [path]
+
+
+def _plot_behavior_alignment(behavior_score_alignment, figures_dir):
+    required = {"behavior_column", "model_name", "attack_family", "behavior_value", "prediction_rate"}
+    if behavior_score_alignment.empty or not required <= set(behavior_score_alignment.columns):
+        return []
+    frame = behavior_score_alignment[
+        (behavior_score_alignment["behavior_column"] == "jailbreak_success")
+        & (behavior_score_alignment["behavior_value"] == 1)
+    ]
+    if frame.empty:
+        return []
+    pivot = frame.pivot_table(
+        index="model_name",
+        columns="attack_family",
+        values="prediction_rate",
+        aggfunc="mean",
+    )
+    path = figures_dir / "prediction_rate_on_successful_jailbreaks.png"
+    result = _plot_heatmap(
+        pivot,
+        path,
+        "JBShield prediction rate on behavior-labeled jailbreak successes",
+        cmap="viridis",
+    )
+    return [result] if result else []
+
+
 def _plot_hidden_divergence(hidden_layer_metrics, figures_dir):
     required = {"source", "comparison", "layer", "centroid_cosine_divergence"}
     if hidden_layer_metrics.empty or not required <= set(hidden_layer_metrics.columns):
@@ -736,7 +1261,9 @@ def _write_plots(output_dir, frames):
     plot_files.extend(_plot_critical_layers(frames["concept_stats"], figures_dir))
     plot_files.extend(_plot_concept_vector_cosine(frames["concept_vector_cosine"], figures_dir))
     plot_files.extend(_plot_score_distribution_summary(frames["score_distributions"], figures_dir))
+    plot_files.extend(_plot_error_breakdown(frames["score_error_analysis"], figures_dir))
     plot_files.extend(_plot_hidden_divergence(frames["hidden_layer_metrics"], figures_dir))
+    plot_files.extend(_plot_behavior_alignment(frames["behavior_score_alignment"], figures_dir))
     return [str(path.relative_to(output_dir)) for path in plot_files if path is not None]
 
 
@@ -752,6 +1279,7 @@ def _analyze_phase2_run(run_dir, state, hidden_analysis):
     hidden_spans_meta = _hidden_metadata(run_dir, "hidden_spans.safetensors", "user_prompt")
     num_scores = _append_score_tables(run_dir, run_id, model_name, state)
     _append_calibration_tables(run_dir, run_id, model_name, state)
+    _append_phase2_behavior_labels(labels, run_id, model_name, state)
     _append_span_quality(run_dir, run_id, model_name, state)
     _append_concept_vector_cosine(run_dir, run_id, model_name, state)
     _append_artifact_manifest(run_dir, run_id, model_name, state)
@@ -786,7 +1314,14 @@ def _analyze_phase2_run(run_dir, state, hidden_analysis):
     )
 
 
-def _write_summary_md(path, state, hidden_analysis, plot_files=None, csv_export=False):
+def _write_summary_md(
+    path,
+    state,
+    hidden_analysis,
+    plot_files=None,
+    csv_export=False,
+    behavior_labels_provided=False,
+):
     runs = pd.DataFrame(state.runs)
     result_summaries = pd.DataFrame(state.result_summaries)
     total_phase2_mb = sum(row["size_mb"] for row in state.artifact_manifest)
@@ -798,6 +1333,7 @@ def _write_summary_md(path, state, hidden_analysis, plot_files=None, csv_export=
         f"- Result summaries: {len(state.result_summaries)}",
         f"- Artifact size scanned: {total_phase2_mb:.3f} MB",
         f"- Hidden tensor layer analysis: {'enabled' if hidden_analysis else 'disabled'}",
+        f"- Behavior label alignment: {'enabled' if behavior_labels_provided else 'not provided'}",
         f"- CSV export: {'enabled' if csv_export else 'disabled'}",
         f"- Figures: {len(plot_files)}",
         f"- Warnings: {len(state.warnings)}",
@@ -849,6 +1385,7 @@ def analyze_remote_artifacts(
     result_root,
     output_dir,
     run_prefixes=None,
+    behavior_label_paths=None,
     hidden_analysis=False,
     plots=False,
     export_csv=False,
@@ -860,6 +1397,7 @@ def analyze_remote_artifacts(
     run_prefixes = [prefix for prefix in (run_prefixes or []) if prefix]
     state = AnalysisState(output_dir=output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    external_behavior_labels = _load_behavior_labels(behavior_label_paths or [], state)
 
     phase2_runs = _discover_phase2_runs(phase2_root, run_prefixes)
     if not phase2_runs:
@@ -873,6 +1411,8 @@ def analyze_remote_artifacts(
     for summary_path in result_summaries:
         _append_result_summary(summary_path, state)
 
+    behavior_labels = _combine_behavior_labels(state.phase2_behavior_labels, external_behavior_labels)
+    _append_derived_tables(state, behavior_labels)
     export_csv = bool(export_csv or plots)
     frames = _state_frames(state)
     _write_frames(output_dir, frames, export_csv=export_csv)
@@ -884,6 +1424,12 @@ def analyze_remote_artifacts(
             "result_root": str(result_root),
             "output_dir": str(output_dir),
             "run_prefixes": run_prefixes,
+            "behavior_label_paths": [str(path) for path in (behavior_label_paths or [])],
+            "behavior_labels_provided": bool(behavior_label_paths) or bool(state.phase2_behavior_labels),
+            "phase2_behavior_label_rows": len(state.phase2_behavior_labels),
+            "external_behavior_label_rows": int(len(external_behavior_labels))
+            if external_behavior_labels is not None
+            else 0,
             "hidden_analysis": hidden_analysis,
             "plots": plots,
             "plot_files": plot_files,
@@ -900,6 +1446,7 @@ def analyze_remote_artifacts(
         hidden_analysis=hidden_analysis,
         plot_files=plot_files,
         csv_export=export_csv,
+        behavior_labels_provided=bool(behavior_label_paths) or bool(state.phase2_behavior_labels),
     )
     archive = _zip_output(output_dir) if zip_output else None
     return {
@@ -924,6 +1471,16 @@ def main():
         action="append",
         default=[],
         help="Only analyze runs whose run_id starts with this prefix. Can be repeated.",
+    )
+    parser.add_argument(
+        "--behavior-labels",
+        action="append",
+        default=[],
+        help=(
+            "Optional CSV/JSONL/JSON/parquet behavior labels to join with sample scores. "
+            "Expected columns include prompt_id or score_id, and optionally "
+            "jailbreak_success, refusal, judge_score, output_text."
+        ),
     )
     parser.add_argument(
         "--hidden-analysis",
@@ -952,6 +1509,7 @@ def main():
         result_root=args.result_root,
         output_dir=args.output_dir,
         run_prefixes=args.run_prefix,
+        behavior_label_paths=args.behavior_labels,
         hidden_analysis=args.hidden_analysis,
         plots=args.plots,
         export_csv=args.csv,
