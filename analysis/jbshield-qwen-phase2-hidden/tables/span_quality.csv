@@ -1,0 +1,15 @@
+run_id,model_name,span_name,source,num_spans,zero_token_spans,token_count_mean,token_count_min,token_count_max,sequence_length_mean,sequence_length_max
+jbshield-qwen-phase2-qwen2.5-14b,qwen2.5-14b,last_input_token,last_input_token,7400,0,1.0,1.0,1.0,198.50702702702702,8649.0
+jbshield-qwen-phase2-qwen2.5-14b,qwen2.5-14b,user_prompt,subsequence,7400,0,198.50702702702702,3.0,8649.0,198.50702702702702,8649.0
+jbshield-qwen-phase2-qwen2.5-14b-instruct,qwen2.5-14b-instruct,last_input_token,last_input_token,7400,0,1.0,1.0,1.0,227.50702702702702,8678.0
+jbshield-qwen-phase2-qwen2.5-14b-instruct,qwen2.5-14b-instruct,user_prompt,subsequence,7400,0,198.50702702702702,3.0,8649.0,227.50702702702702,8678.0
+jbshield-qwen-phase2-qwen2.5-32b,qwen2.5-32b,last_input_token,last_input_token,7400,0,1.0,1.0,1.0,198.50702702702702,8649.0
+jbshield-qwen-phase2-qwen2.5-32b,qwen2.5-32b,user_prompt,subsequence,7400,0,198.50702702702702,3.0,8649.0,198.50702702702702,8649.0
+jbshield-qwen-phase2-qwen2.5-32b-instruct,qwen2.5-32b-instruct,last_input_token,last_input_token,7400,0,1.0,1.0,1.0,227.50702702702702,8678.0
+jbshield-qwen-phase2-qwen2.5-32b-instruct,qwen2.5-32b-instruct,user_prompt,subsequence,7400,0,198.50702702702702,3.0,8649.0,227.50702702702702,8678.0
+jbshield-qwen-phase2-qwen2.5-7b,qwen2.5-7b,last_input_token,last_input_token,7400,0,1.0,1.0,1.0,198.50702702702702,8649.0
+jbshield-qwen-phase2-qwen2.5-7b,qwen2.5-7b,user_prompt,subsequence,7400,0,198.50702702702702,3.0,8649.0,198.50702702702702,8649.0
+jbshield-qwen-phase2-qwen2.5-7b-instruct,qwen2.5-7b-instruct,last_input_token,last_input_token,7400,0,1.0,1.0,1.0,227.50702702702702,8678.0
+jbshield-qwen-phase2-qwen2.5-7b-instruct,qwen2.5-7b-instruct,user_prompt,subsequence,7400,0,198.50702702702702,3.0,8649.0,227.50702702702702,8678.0
+jbshield-qwen-phase2-qwen3-8b,qwen3-8b,last_input_token,last_input_token,7400,0,1.0,1.0,1.0,206.50702702702702,8657.0
+jbshield-qwen-phase2-qwen3-8b,qwen3-8b,user_prompt,subsequence,7400,0,198.50702702702702,3.0,8649.0,206.50702702702702,8657.0
