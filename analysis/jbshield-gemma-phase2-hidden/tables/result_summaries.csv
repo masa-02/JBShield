@@ -1,0 +1,6 @@
+run_id,model_name,summary_path,status,elapsed_seconds,accuracy,precision,recall,f1,num_samples,phase2_enabled,phase2_path
+jbshield-gemma-phase2-gemma-2-27b-it,gemma-2-27b-it,result/gemma-2-27b-it/runs/jbshield-gemma-phase2-gemma-2-27b-it/summary.json,success,2917.8299086093903,0.73944,0.7179898033503278,0.78864,0.7516584064048799,12500.0,True,outputs/phase2/jbshield-gemma-phase2-gemma-2-27b-it
+jbshield-gemma-phase2-gemma-2-9b-it,gemma-2-9b-it,result/gemma-2-9b-it/runs/jbshield-gemma-phase2-gemma-2-9b-it/summary.json,success,26039.388014554977,0.89512,0.8349382883493829,0.98496,0.903765690376569,12500.0,True,outputs/phase2/jbshield-gemma-phase2-gemma-2-9b-it
+jbshield-gemma-phase2-gemma-3-12b-it,gemma-3-12b-it,result/gemma-3-12b-it/runs/jbshield-gemma-phase2-gemma-3-12b-it/summary.json,failed,,,,,,,False,
+jbshield-gemma-phase2-gemma-3-27b-it,gemma-3-27b-it,result/gemma-3-27b-it/runs/jbshield-gemma-phase2-gemma-3-27b-it/summary.json,failed,,,,,,,False,
+jbshield-gemma-phase2-gemma-3-4b-it,gemma-3-4b-it,result/gemma-3-4b-it/runs/jbshield-gemma-phase2-gemma-3-4b-it/summary.json,failed,,,,,,,False,

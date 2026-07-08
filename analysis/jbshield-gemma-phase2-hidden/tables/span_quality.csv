@@ -1,0 +1,7 @@
+run_id,model_name,span_name,source,num_spans,zero_token_spans,token_count_mean,token_count_min,token_count_max,sequence_length_mean,sequence_length_max
+jbshield-gemma-phase2-gemma-2-27b-it,gemma-2-27b-it,last_input_token,last_input_token,7400,0,1.0,1.0,1.0,212.08283783783784,9285.0
+jbshield-gemma-phase2-gemma-2-27b-it,gemma-2-27b-it,user_prompt,subsequence,6855,0,218.00350109409192,4.0,9276.0,227.00350109409192,9285.0
+jbshield-gemma-phase2-gemma-2-27b-it,gemma-2-27b-it,user_prompt,whole_sequence_fallback,545,0,24.411009174311925,13.0,160.0,24.411009174311925,160.0
+jbshield-gemma-phase2-gemma-2-9b-it,gemma-2-9b-it,last_input_token,last_input_token,7400,0,1.0,1.0,1.0,212.08283783783784,9285.0
+jbshield-gemma-phase2-gemma-2-9b-it,gemma-2-9b-it,user_prompt,subsequence,6855,0,218.00350109409192,4.0,9276.0,227.00350109409192,9285.0
+jbshield-gemma-phase2-gemma-2-9b-it,gemma-2-9b-it,user_prompt,whole_sequence_fallback,545,0,24.411009174311925,13.0,160.0,24.411009174311925,160.0

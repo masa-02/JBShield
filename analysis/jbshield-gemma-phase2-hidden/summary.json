@@ -1,0 +1,27 @@
+{
+  "phase2_root": "outputs/phase2",
+  "result_root": "result",
+  "output_dir": "analysis/jbshield-gemma-phase2-hidden",
+  "run_prefixes": [
+    "jbshield-gemma-phase2"
+  ],
+  "behavior_label_paths": [],
+  "behavior_labels_provided": false,
+  "phase2_behavior_label_rows": 0,
+  "external_behavior_label_rows": 0,
+  "hidden_analysis": true,
+  "plots": true,
+  "plot_files": [
+    "figures/f1_by_model_attack.png",
+    "figures/critical_layer_depth_by_model.png",
+    "figures/jailbreak_concept_vector_cosine.png",
+    "figures/score_means_by_attack_family.png",
+    "figures/confusion_breakdown_by_model.png",
+    "figures/hidden_layer_centroid_divergence.png"
+  ],
+  "csv_export": true,
+  "num_phase2_runs": 2,
+  "num_result_summaries": 5,
+  "num_warnings": 0,
+  "warnings": []
+}
