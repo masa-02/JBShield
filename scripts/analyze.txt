@@ -1,0 +1,1 @@
+uv run python scripts/analyze_remote_artifacts.py --phase2-root outputs/phase2 --result-root result --run-prefix jbshield-qwen-phase2 --output-dir analysis/jbshield-qwen-phase2-hidden --hidden-analysis --plots

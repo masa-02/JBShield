@@ -1,0 +1,1 @@
+nohup uv run python scripts/run_detection_config_list.py configs/runtime/manifests/qwen.txt jbshield-qwen-phase2 logs/JBShield-D_qwen_phase2-large.log --phase2 &
