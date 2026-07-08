@@ -16,6 +16,7 @@ from utils import load_model, load_ori_prompts, get_jailbreak_prompts
 from utils import get_sentence_embeddings
 from utils import interpret_difference_matrix
 from utils import cosine_similarity
+from utils import get_model_hidden_size, get_model_num_hidden_layers, get_model_vocab_size
 
 
 DEFAULT_JAILBREAKS = ["ijp", "gcg", "saa", "autodan", "pair", "drattack", "puzzler", "zulu", "base64"]
@@ -642,9 +643,9 @@ def detection(
             "chat_template": chat_template,
             "tokenizer_class": type(tokenizer).__name__,
             "model_class": type(model).__name__,
-            "num_layers": int(getattr(model.config, "num_hidden_layers", 0) + 1),
-            "hidden_size": getattr(model.config, "hidden_size", None),
-            "vocab_size": getattr(model.config, "vocab_size", None),
+            "num_layers": get_model_num_hidden_layers(model, fallback=0) + 1,
+            "hidden_size": get_model_hidden_size(model),
+            "vocab_size": get_model_vocab_size(model),
             "dtype": str(getattr(model, "dtype", "")),
             "device": str(getattr(model, "device", "")),
             "quantization": str(model_loading.get("quantization", "none")).lower(),

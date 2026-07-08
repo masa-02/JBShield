@@ -210,6 +210,42 @@ def _to_model_inputs(encoded, device):
     return {"input_ids": encoded.to(device) if hasattr(encoded, "to") else encoded}
 
 
+def get_model_text_config(model_or_config):
+    """Return the language/text config for text-only and multimodal HF models."""
+    config = getattr(model_or_config, "config", model_or_config)
+    get_text_config = getattr(config, "get_text_config", None)
+    if callable(get_text_config):
+        text_config = get_text_config()
+        if text_config is not None:
+            return text_config
+    text_config = getattr(config, "text_config", None)
+    return text_config if text_config is not None else config
+
+
+def get_model_config_value(model_or_config, name, default=None):
+    """Read config values from the text config first, then the top-level config."""
+    config = getattr(model_or_config, "config", model_or_config)
+    text_config = get_model_text_config(config)
+    if hasattr(text_config, name):
+        return getattr(text_config, name)
+    return getattr(config, name, default)
+
+
+def get_model_num_hidden_layers(model_or_config, fallback=None):
+    value = get_model_config_value(model_or_config, "num_hidden_layers", fallback)
+    if value is None:
+        raise AttributeError("Model config does not expose num_hidden_layers")
+    return int(value)
+
+
+def get_model_hidden_size(model_or_config, default=None):
+    return get_model_config_value(model_or_config, "hidden_size", default)
+
+
+def get_model_vocab_size(model_or_config, default=None):
+    return get_model_config_value(model_or_config, "vocab_size", default)
+
+
 def get_judge_scores(target_model_name, judge_model, judge_tokenizer, question, answer):
     """
     Get the judge scores for a given question and answer with mistral-sorry-bench model.
@@ -334,22 +370,39 @@ def _module_output_tensor(output):
     return output
 
 
-def _backbone_for_hidden_capture(model):
-    backbone = getattr(model, "model", None)
-    if backbone is None:
-        backbone = getattr(model, "base_model", None)
-    if backbone is None:
-        raise ValueError("Cannot locate transformer backbone for hidden-state capture")
+def _candidate_backbones(model):
+    seen = set()
 
-    layers = getattr(backbone, "layers", None)
-    if layers is None and hasattr(backbone, "decoder"):
-        layers = getattr(backbone.decoder, "layers", None)
-    embed_tokens = getattr(backbone, "embed_tokens", None)
-    if embed_tokens is None and hasattr(backbone, "decoder"):
-        embed_tokens = getattr(backbone.decoder, "embed_tokens", None)
-    if layers is None or embed_tokens is None:
-        raise ValueError("Backbone must expose embed_tokens and layers for JBShield hidden capture")
-    return backbone, embed_tokens, layers
+    def add(candidate):
+        if candidate is None:
+            return []
+        key = id(candidate)
+        if key in seen:
+            return []
+        seen.add(key)
+        return [candidate]
+
+    candidates = []
+    candidates.extend(add(model))
+    for attr in ("model", "base_model", "decoder", "language_model"):
+        parent_candidates = list(candidates)
+        for parent in parent_candidates:
+            child = getattr(parent, attr, None)
+            candidates.extend(add(child))
+    return candidates
+
+
+def _backbone_for_hidden_capture(model):
+    for backbone in _candidate_backbones(model):
+        layers = getattr(backbone, "layers", None)
+        if layers is None and hasattr(backbone, "decoder"):
+            layers = getattr(backbone.decoder, "layers", None)
+        embed_tokens = getattr(backbone, "embed_tokens", None)
+        if embed_tokens is None and hasattr(backbone, "decoder"):
+            embed_tokens = getattr(backbone.decoder, "embed_tokens", None)
+        if layers is not None and embed_tokens is not None:
+            return backbone, embed_tokens, layers
+    raise ValueError("Backbone must expose embed_tokens and layers for JBShield hidden capture")
 
 
 def collect_hidden_summaries(
@@ -436,7 +489,7 @@ def collect_hidden_summaries(
         for hook in hooks:
             hook.remove()
 
-    expected_layers = int(getattr(model.config, "num_hidden_layers", len(layers)) + 1)
+    expected_layers = get_model_num_hidden_layers(model, fallback=len(layers)) + 1
     if len(summaries) != expected_layers:
         raise ValueError(f"Captured {len(summaries)} layers, expected {expected_layers}")
 
@@ -560,18 +613,18 @@ def get_sentence_embeddings(
     - tail_lens (if return_tail): per-prompt actual number of real trailing tokens (<= last_k)
     - audit (if return_audit): hidden-state audit metadata
     """
-    num_layers = model.config.num_hidden_layers + 1
+    num_layers = get_model_num_hidden_layers(model) + 1
     embeddings_last_token = [[] for _ in range(num_layers)]
     tail_embeddings = [[] for _ in range(num_layers)] if return_tail else None
     span_embeddings = [[] for _ in range(num_layers)] if return_spans else None
     tail_lens = [] if return_tail else None
     span_records = [] if return_spans else None
-    hidden_size_cfg = getattr(model.config, "hidden_size", 1024)
+    hidden_size_cfg = get_model_hidden_size(model, 1024)
     audit = {
         "num_prompts": 0,
         "num_empty_prompts": 0,
         "num_layers": num_layers,
-        "hidden_size": getattr(model.config, "hidden_size", None),
+        "hidden_size": get_model_hidden_size(model),
         "dtype": None,
         "device": None,
         "max_sequence_length": 0,
@@ -596,7 +649,7 @@ def get_sentence_embeddings(
             else:
                 resolved_span = None
         else:
-            for i in range(model.config.num_hidden_layers + 1):
+            for i in range(num_layers):
                 embeddings_last_token[i].append(torch.zeros(hidden_size_cfg).cpu())
                 if return_tail:
                     tail_embeddings[i].append(torch.zeros(last_k, hidden_size_cfg).cpu())

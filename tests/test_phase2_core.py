@@ -16,6 +16,9 @@ from utils import (
     _bitsandbytes_config,
     _to_model_inputs,
     collect_hidden_summaries,
+    get_model_hidden_size,
+    get_model_num_hidden_layers,
+    get_model_vocab_size,
     interpret_difference_matrix,
 )
 
@@ -100,6 +103,31 @@ class FakeSummaryModel(nn.Module):
         super().__init__()
         self.config = type("Config", (), {"num_hidden_layers": 2, "hidden_size": 4})()
         self.model = FakeBackbone()
+
+
+class FakeGemma3Config:
+    def __init__(self):
+        self.text_config = type(
+            "TextConfig",
+            (),
+            {"num_hidden_layers": 2, "hidden_size": 4, "vocab_size": 16},
+        )()
+
+    def get_text_config(self):
+        return self.text_config
+
+
+class FakeGemma3Outer(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.language_model = FakeBackbone()
+
+
+class FakeGemma3SummaryModel(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.config = FakeGemma3Config()
+        self.model = FakeGemma3Outer()
 
 
 def test_span_resolution_success_and_failures():
@@ -308,6 +336,24 @@ def test_collect_hidden_summaries_avoids_full_hidden_state_return():
     assert summary["audit"]["audit_scope"] == "captured_hidden_summaries"
 
 
+def test_gemma3_style_text_config_and_language_backbone_are_supported():
+    model = FakeGemma3SummaryModel()
+    assert get_model_num_hidden_layers(model) == 2
+    assert get_model_hidden_size(model) == 4
+    assert get_model_vocab_size(model) == 16
+
+    summary = collect_hidden_summaries(
+        model,
+        {"input_ids": torch.tensor([[1, 2, 3, 4]])},
+        return_tail=True,
+        return_spans=True,
+        span=(1, 3),
+    )
+    assert len(summary["last"]) == 3
+    assert tuple(summary["last"][0].shape) == (4,)
+    assert tuple(summary["span"][0].shape) == (4,)
+
+
 if __name__ == "__main__":
     test_span_resolution_success_and_failures()
     test_span_resolution_accepts_batch_encoding_like_tokenizer_output()
@@ -316,3 +362,4 @@ if __name__ == "__main__":
     test_model_input_normalization_accepts_tensor_and_batch_encoding_like()
     test_interpret_difference_matrix_accepts_single_embedding_vectors()
     test_collect_hidden_summaries_avoids_full_hidden_state_return()
+    test_gemma3_style_text_config_and_language_backbone_are_supported()
