@@ -5,6 +5,10 @@
   "run_prefixes": [
     "jbshield-qwen-phase2"
   ],
+  "behavior_label_paths": [],
+  "behavior_labels_provided": false,
+  "phase2_behavior_label_rows": 0,
+  "external_behavior_label_rows": 0,
   "hidden_analysis": true,
   "plots": true,
   "plot_files": [
@@ -12,6 +16,7 @@
     "figures/critical_layer_depth_by_model.png",
     "figures/jailbreak_concept_vector_cosine.png",
     "figures/score_means_by_attack_family.png",
+    "figures/confusion_breakdown_by_model.png",
     "figures/hidden_layer_centroid_divergence.png"
   ],
   "csv_export": true,

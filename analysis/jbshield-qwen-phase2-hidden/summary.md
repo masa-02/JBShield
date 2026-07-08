@@ -4,8 +4,9 @@
 - Result summaries: 9
 - Artifact size scanned: 43120.449 MB
 - Hidden tensor layer analysis: enabled
+- Behavior label alignment: not provided
 - CSV export: enabled
-- Figures: 5
+- Figures: 6
 - Warnings: 0
 
 ## Figures
@@ -14,6 +15,7 @@
 - `figures/critical_layer_depth_by_model.png`
 - `figures/jailbreak_concept_vector_cosine.png`
 - `figures/score_means_by_attack_family.png`
+- `figures/confusion_breakdown_by_model.png`
 - `figures/hidden_layer_centroid_divergence.png`
 
 ## Runs
@@ -34,13 +36,13 @@ jbshield-qwen-phase2-qwen2.5-32b-instruct qwen2.5-32b-instruct             True 
 ```text
                                    run_id           model_name  status  accuracy       f1  num_samples
          jbshield-qwen-phase2-qwen2.5-14b          qwen2.5-14b success   0.35704 0.053022      12500.0
-jbshield-qwen-phase2-qwen2.5-14b-instruct qwen2.5-14b-instruct success   0.78352 0.797273      12500.0
+jbshield-qwen-phase2-qwen2.5-14b-instruct qwen2.5-14b-instruct  failed       NaN      NaN          NaN
          jbshield-qwen-phase2-qwen2.5-32b          qwen2.5-32b success   0.38336 0.005419      12500.0
 jbshield-qwen-phase2-qwen2.5-32b-instruct qwen2.5-32b-instruct success   0.84408 0.845990      12500.0
           jbshield-qwen-phase2-qwen2.5-7b           qwen2.5-7b success   0.34424 0.006063      12500.0
  jbshield-qwen-phase2-qwen2.5-7b-instruct  qwen2.5-7b-instruct success   0.89688 0.905032      12500.0
            jbshield-qwen-phase2-qwen3-14b            qwen3-14b  failed       NaN      NaN          NaN
            jbshield-qwen-phase2-qwen3-32b            qwen3-32b  failed       NaN      NaN          NaN
-            jbshield-qwen-phase2-qwen3-8b             qwen3-8b success   0.87984 0.890732      12500.0
+            jbshield-qwen-phase2-qwen3-8b             qwen3-8b  failed       NaN      NaN          NaN
 ```
 
