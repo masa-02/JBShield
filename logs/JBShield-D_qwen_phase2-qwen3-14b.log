@@ -9,4 +9,86 @@ Get embeddings for calibration prompts...
   0%|          | 0/30 [00:00<?, ?it/s]  3%|▎         | 1/30 [00:07<03:30,  7.25s/it]  7%|▋         | 2/30 [00:14<03:22,  7.24s/it] 10%|█         | 3/30 [00:22<03:19,  7.40s/it] 13%|█▎        | 4/30 [00:29<03:13,  7.43s/it] 17%|█▋        | 5/30 [00:37<03:10,  7.61s/it] 20%|██        | 6/30 [00:45<03:03,  7.65s/it] 23%|██▎       | 7/30 [00:53<02:58,  7.76s/it] 27%|██▋       | 8/30 [01:00<02:47,  7.60s/it] 30%|███       | 9/30 [01:07<02:37,  7.48s/it] 33%|███▎      | 10/30 [01:14<02:27,  7.38s/it] 37%|███▋      | 11/30 [01:22<02:23,  7.55s/it] 40%|████      | 12/30 [01:31<02:21,  7.88s/it] 43%|████▎     | 13/30 [01:38<02:10,  7.69s/it] 47%|████▋     | 14/30 [01:45<02:00,  7.55s/it] 50%|█████     | 15/30 [01:53<01:52,  7.49s/it] 53%|█████▎    | 16/30 [02:00<01:43,  7.38s/it] 57%|█████▋    | 17/30 [02:06<01:32,  7.14s/it] 60%|██████    | 18/30 [02:14<01:28,  7.36s/it] 63%|██████▎   | 19/30 [02:21<01:18,  7.16s/it] 67%|██████▋   | 20/30 [02:28<01:10,  7.04s/it] 70%|███████   | 21/30 [02:35<01:03,  7.06s/it] 73%|███████▎  | 22/30 [02:42<00:56,  7.09s/it] 77%|███████▋  | 23/30 [02:49<00:49,  7.11s/it] 80%|████████  | 24/30 [02:56<00:42,  7.15s/it] 83%|████████▎ | 25/30 [03:03<00:35,  7.12s/it] 87%|████████▋ | 26/30 [03:11<00:28,  7.13s/it] 90%|█████████ | 27/30 [03:18<00:21,  7.18s/it] 93%|█████████▎| 28/30 [03:25<00:14,  7.28s/it] 97%|█████████▋| 29/30 [03:33<00:07,  7.40s/it]100%|██████████| 30/30 [03:41<00:00,  7.41s/it]100%|██████████| 30/30 [03:41<00:00,  7.37s/it]
   0%|          | 0/30 [00:00<?, ?it/s]  3%|▎         | 1/30 [00:07<03:25,  7.09s/it]  7%|▋         | 2/30 [00:14<03:17,  7.04s/it] 10%|█         | 3/30 [00:21<03:10,  7.04s/it] 13%|█▎        | 4/30 [00:28<03:02,  7.02s/it] 17%|█▋        | 5/30 [00:35<02:54,  6.97s/it] 20%|██        | 6/30 [00:41<02:47,  6.96s/it] 23%|██▎       | 7/30 [00:49<02:41,  7.00s/it] 27%|██▋       | 8/30 [00:56<02:34,  7.04s/it] 30%|███       | 9/30 [01:03<02:27,  7.03s/it] 33%|███▎      | 10/30 [01:10<02:20,  7.05s/it] 37%|███▋      | 11/30 [01:17<02:14,  7.09s/it] 40%|████      | 12/30 [01:24<02:07,  7.10s/it] 43%|████▎     | 13/30 [01:27<01:37,  5.73s/it] 47%|████▋     | 14/30 [01:27<01:07,  4.19s/it] 50%|█████     | 15/30 [01:30<00:58,  3.89s/it] 53%|█████▎    | 16/30 [01:33<00:46,  3.35s/it] 57%|█████▋    | 17/30 [01:34<00:35,  2.71s/it] 60%|██████    | 18/30 [01:37<00:34,  2.89s/it] 63%|██████▎   | 19/30 [01:39<00:27,  2.51s/it] 67%|██████▋   | 20/30 [01:40<00:22,  2.24s/it] 70%|███████   | 21/30 [01:44<00:23,  2.56s/it] 73%|███████▎  | 22/30 [01:44<00:16,  2.04s/it] 77%|███████▋  | 23/30 [01:45<00:11,  1.67s/it] 80%|████████  | 24/30 [01:48<00:12,  2.01s/it] 83%|████████▎ | 25/30 [01:50<00:10,  2.08s/it] 87%|████████▋ | 26/30 [01:51<00:07,  1.77s/it] 90%|█████████ | 27/30 [01:53<00:05,  1.82s/it] 93%|█████████▎| 28/30 [01:56<00:04,  2.21s/it] 97%|█████████▋| 29/30 [02:04<00:03,  3.72s/it]100%|██████████| 30/30 [02:11<00:00,  4.77s/it]100%|██████████| 30/30 [02:11<00:00,  4.38s/it]
   0%|          | 0/30 [00:00<?, ?it/s]  3%|▎         | 1/30 [00:02<01:18,  2.70s/it]  7%|▋         | 2/30 [00:03<00:47,  1.71s/it] 10%|█         | 3/30 [00:05<00:44,  1.64s/it] 13%|█▎        | 4/30 [00:08<00:59,  2.29s/it] 17%|█▋        | 5/30 [00:10<00:56,  2.27s/it] 20%|██        | 6/30 [00:14<01:03,  2.63s/it] 23%|██▎       | 7/30 [00:15<00:50,  2.19s/it] 27%|██▋       | 8/30 [00:18<00:55,  2.52s/it] 30%|███       | 9/30 [00:20<00:51,  2.46s/it] 33%|███▎      | 10/30 [00:26<01:07,  3.35s/it] 37%|███▋      | 11/30 [00:34<01:30,  4.74s/it] 40%|████      | 12/30 [00:39<01:28,  4.91s/it] 43%|████▎     | 13/30 [00:42<01:11,  4.22s/it] 47%|████▋     | 14/30 [00:44<01:00,  3.80s/it] 50%|█████     | 15/30 [00:47<00:52,  3.52s/it] 53%|█████▎    | 16/30 [00:50<00:45,  3.27s/it] 57%|█████▋    | 17/30 [00:52<00:37,  2.87s/it] 60%|██████    | 18/30 [00:56<00:39,  3.30s/it] 63%|██████▎   | 19/30 [01:04<00:49,  4.51s/it] 67%|██████▋   | 20/30 [01:10<00:50,  5.03s/it] 70%|███████   | 21/30 [01:13<00:39,  4.34s/it] 73%|███████▎  | 22/30 [01:13<00:26,  3.31s/it] 77%|███████▋  | 23/30 [01:15<00:19,  2.81s/it] 80%|████████  | 24/30 [01:19<00:17,  2.99s/it] 83%|████████▎ | 25/30 [01:20<00:12,  2.54s/it] 87%|████████▋ | 26/30 [01:23<00:11,  2.76s/it] 90%|█████████ | 27/30 [01:25<00:07,  2.51s/it] 93%|█████████▎| 28/30 [01:28<00:05,  2.59s/it] 97%|█████████▋| 29/30 [01:33<00:03,  3.33s/it]100%|██████████| 30/30 [01:40<00:00,  4.53s/it]100%|██████████| 30/30 [01:40<00:00,  3.36s/it]
-  0%|          | 0/30 [00:00<?, ?it/s]  3%|▎         | 1/30 [00:07<03:29,  7.21s/it]  7%|▋         | 2/30 [00:14<03:24,  7.31s/it]
+  0%|          | 0/30 [00:00<?, ?it/s]  3%|▎         | 1/30 [00:07<03:29,  7.21s/it]  7%|▋         | 2/30 [00:14<03:24,  7.31s/it] 10%|█         | 3/30 [00:21<03:16,  7.29s/it] 13%|█▎        | 4/30 [00:29<03:09,  7.29s/it] 17%|█▋        | 5/30 [00:36<03:05,  7.43s/it] 20%|██        | 6/30 [00:43<02:55,  7.31s/it] 23%|██▎       | 7/30 [00:50<02:41,  7.04s/it] 27%|██▋       | 8/30 [00:58<02:40,  7.29s/it] 30%|███       | 9/30 [01:05<02:30,  7.17s/it] 33%|███▎      | 10/30 [01:12<02:22,  7.14s/it] 37%|███▋      | 11/30 [01:19<02:17,  7.23s/it] 40%|████      | 12/30 [01:26<02:09,  7.21s/it] 43%|████▎     | 13/30 [01:33<01:58,  6.96s/it] 47%|████▋     | 14/30 [01:40<01:51,  6.99s/it] 50%|█████     | 15/30 [01:47<01:45,  7.01s/it] 53%|█████▎    | 16/30 [01:54<01:38,  7.03s/it] 57%|█████▋    | 17/30 [02:01<01:31,  7.04s/it] 60%|██████    | 18/30 [02:07<01:21,  6.82s/it] 60%|██████    | 18/30 [02:13<01:28,  7.41s/it]
+Traceback (most recent call last):
+  File "/hpc_share/ce255013/Sec4AI-Exp/examples/JBShield/detection.py", line 738, in <module>
+    detection(
+  File "/hpc_share/ce255013/Sec4AI-Exp/examples/JBShield/detection.py", line 387, in detection
+    calibration_attack_embeddings = {
+  File "/hpc_share/ce255013/Sec4AI-Exp/examples/JBShield/detection.py", line 388, in <dictcomp>
+    jailbreak: collect_embeddings(
+  File "/hpc_share/ce255013/Sec4AI-Exp/examples/JBShield/detection.py", line 333, in collect_embeddings
+    result = get_sentence_embeddings(
+  File "/hpc_share/ce255013/Sec4AI-Exp/examples/JBShield/utils.py", line 626, in get_sentence_embeddings
+    summary = collect_hidden_summaries(
+  File "/hpc_share/ce255013/Sec4AI-Exp/examples/JBShield/utils.py", line 429, in collect_hidden_summaries
+    backbone(
+  File "/hpc_share/ce255013/Sec4AI-Exp/examples/JBShield/.venv/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/hpc_share/ce255013/Sec4AI-Exp/examples/JBShield/.venv/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/hpc_share/ce255013/Sec4AI-Exp/examples/JBShield/.venv/lib/python3.10/site-packages/transformers/utils/generic.py", line 1036, in wrapper
+    output = func(self, *args, **kwargs)
+  File "/hpc_share/ce255013/Sec4AI-Exp/examples/JBShield/.venv/lib/python3.10/site-packages/transformers/utils/output_capturing.py", line 252, in wrapper
+    outputs = func(self, *args, **kwargs)
+  File "/hpc_share/ce255013/Sec4AI-Exp/examples/JBShield/.venv/lib/python3.10/site-packages/transformers/models/qwen3/modeling_qwen3.py", line 424, in forward
+    hidden_states = decoder_layer(
+  File "/hpc_share/ce255013/Sec4AI-Exp/examples/JBShield/.venv/lib/python3.10/site-packages/transformers/modeling_layers.py", line 93, in __call__
+    return super().__call__(*args, **kwargs)
+  File "/hpc_share/ce255013/Sec4AI-Exp/examples/JBShield/.venv/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/hpc_share/ce255013/Sec4AI-Exp/examples/JBShield/.venv/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1844, in _call_impl
+    return inner()
+  File "/hpc_share/ce255013/Sec4AI-Exp/examples/JBShield/.venv/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1790, in inner
+    result = forward_call(*args, **kwargs)
+  File "/hpc_share/ce255013/Sec4AI-Exp/examples/JBShield/.venv/lib/python3.10/site-packages/transformers/models/qwen3/modeling_qwen3.py", line 332, in forward
+    hidden_states = self.mlp(hidden_states)
+  File "/hpc_share/ce255013/Sec4AI-Exp/examples/JBShield/.venv/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/hpc_share/ce255013/Sec4AI-Exp/examples/JBShield/.venv/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/hpc_share/ce255013/Sec4AI-Exp/examples/JBShield/.venv/lib/python3.10/site-packages/transformers/models/qwen3/modeling_qwen3.py", line 82, in forward
+    down_proj = self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
+  File "/hpc_share/ce255013/Sec4AI-Exp/examples/JBShield/.venv/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/hpc_share/ce255013/Sec4AI-Exp/examples/JBShield/.venv/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/hpc_share/ce255013/Sec4AI-Exp/examples/JBShield/.venv/lib/python3.10/site-packages/bitsandbytes/nn/modules.py", line 1106, in forward
+    out = bnb.matmul(x, self.weight, bias=self.bias, state=self.state)
+  File "/hpc_share/ce255013/Sec4AI-Exp/examples/JBShield/.venv/lib/python3.10/site-packages/bitsandbytes/autograd/_functions.py", line 366, in matmul
+    return MatMul8bitLt.apply(A, B, out, bias, state)
+  File "/hpc_share/ce255013/Sec4AI-Exp/examples/JBShield/.venv/lib/python3.10/site-packages/torch/autograd/function.py", line 575, in apply
+    return super().apply(*args, **kwargs)  # type: ignore[misc]
+  File "/hpc_share/ce255013/Sec4AI-Exp/examples/JBShield/.venv/lib/python3.10/site-packages/bitsandbytes/autograd/_functions.py", line 156, in forward
+    output, subA = torch.ops.bitsandbytes.int8_mixed_scaled_mm(
+  File "/hpc_share/ce255013/Sec4AI-Exp/examples/JBShield/.venv/lib/python3.10/site-packages/torch/_ops.py", line 1116, in __call__
+    return self._op(*args, **(kwargs or {}))
+  File "/hpc_share/ce255013/Sec4AI-Exp/examples/JBShield/.venv/lib/python3.10/site-packages/torch/_compile.py", line 32, in inner
+    return disable_fn(*args, **kwargs)
+  File "/hpc_share/ce255013/Sec4AI-Exp/examples/JBShield/.venv/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py", line 632, in _fn
+    return fn(*args, **kwargs)
+  File "/hpc_share/ce255013/Sec4AI-Exp/examples/JBShield/.venv/lib/python3.10/site-packages/torch/library.py", line 566, in func_no_dynamo
+    return func(*args, **kwargs)
+  File "/hpc_share/ce255013/Sec4AI-Exp/examples/JBShield/.venv/lib/python3.10/site-packages/bitsandbytes/backends/default/ops.py", line 79, in _
+    torch.ops.bitsandbytes.int8_vectorwise_dequant.default(CB[:, outlier_cols].contiguous(), SCB)
+  File "/hpc_share/ce255013/Sec4AI-Exp/examples/JBShield/.venv/lib/python3.10/site-packages/torch/_ops.py", line 716, in __call__
+    return self._op(*args, **kwargs)
+  File "/hpc_share/ce255013/Sec4AI-Exp/examples/JBShield/.venv/lib/python3.10/site-packages/torch/_compile.py", line 32, in inner
+    return disable_fn(*args, **kwargs)
+  File "/hpc_share/ce255013/Sec4AI-Exp/examples/JBShield/.venv/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py", line 632, in _fn
+    return fn(*args, **kwargs)
+  File "/hpc_share/ce255013/Sec4AI-Exp/examples/JBShield/.venv/lib/python3.10/site-packages/torch/library.py", line 566, in func_no_dynamo
+    return func(*args, **kwargs)
+  File "/hpc_share/ce255013/Sec4AI-Exp/examples/JBShield/.venv/lib/python3.10/site-packages/bitsandbytes/_ops.py", line 130, in _
+    return A * stats.view(-1, 1) * 7.874015718698502e-3
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 114.00 MiB. GPU 0 has a total capacity of 79.15 GiB of which 9.56 MiB is free. Process 1381587 has 4.67 GiB memory in use. Process 1382220 has 8.79 GiB memory in use. Process 1611381 has 19.44 GiB memory in use. Including non-PyTorch memory, this process has 16.06 GiB memory in use. Process 1646843 has 30.13 GiB memory in use. Of the allocated memory 15.38 GiB is allocated by PyTorch, and 179.37 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)
+Skip configs/runtime/qwen3-14b.yml: detection failed. Check GPU memory, model files, gated model access, HF download/cache state, span mapping, or model-specific runtime support.
+===== HF cache cleanup (failure): configs/runtime/qwen3-14b.yml =====
+HF cache cleanup for Qwen/Qwen3-14B (/hpc_share/ce255013/Sec4AI-Exp/examples/JBShield/configs/runtime/qwen3-14b.yml)
+  missing: /hpc_share/ce255013/.cache/huggingface/models--Qwen--Qwen3-14B
+  missing: /hpc_share/ce255013/.cache/huggingface/.locks/models--Qwen--Qwen3-14B
+  missing: /hpc_share/ce255013/.cache/huggingface/hub/models--Qwen--Qwen3-14B
+  missing: /hpc_share/ce255013/.cache/huggingface/hub/.locks/models--Qwen--Qwen3-14B
+  missing: /home/ce255013/.cache/huggingface/hub/models--Qwen--Qwen3-14B
+  missing: /home/ce255013/.cache/huggingface/hub/.locks/models--Qwen--Qwen3-14B
+  no cache entries found
