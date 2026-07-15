@@ -20,8 +20,8 @@
     "figures/hidden_layer_centroid_divergence.png"
   ],
   "csv_export": true,
-  "num_phase2_runs": 2,
-  "num_result_summaries": 5,
+  "num_phase2_runs": 6,
+  "num_result_summaries": 6,
   "num_warnings": 0,
   "warnings": []
 }

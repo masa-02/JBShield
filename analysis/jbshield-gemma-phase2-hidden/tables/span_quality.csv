@@ -5,3 +5,15 @@ jbshield-gemma-phase2-gemma-2-27b-it,gemma-2-27b-it,user_prompt,whole_sequence_f
 jbshield-gemma-phase2-gemma-2-9b-it,gemma-2-9b-it,last_input_token,last_input_token,7400,0,1.0,1.0,1.0,212.08283783783784,9285.0
 jbshield-gemma-phase2-gemma-2-9b-it,gemma-2-9b-it,user_prompt,subsequence,6855,0,218.00350109409192,4.0,9276.0,227.00350109409192,9285.0
 jbshield-gemma-phase2-gemma-2-9b-it,gemma-2-9b-it,user_prompt,whole_sequence_fallback,545,0,24.411009174311925,13.0,160.0,24.411009174311925,160.0
+jbshield-gemma-phase2-gemma-3-12b-it,gemma-3-12b-it,last_input_token,last_input_token,7400,0,1.0,1.0,1.0,212.51594594594596,9271.0
+jbshield-gemma-phase2-gemma-3-12b-it,gemma-3-12b-it,user_prompt,subsequence,6855,0,218.4802334062728,4.0,9262.0,227.4802334062728,9271.0
+jbshield-gemma-phase2-gemma-3-12b-it,gemma-3-12b-it,user_prompt,whole_sequence_fallback,545,0,24.295412844036697,13.0,152.0,24.295412844036697,152.0
+jbshield-gemma-phase2-gemma-3-27b-it,gemma-3-27b-it,last_input_token,last_input_token,7400,0,1.0,1.0,1.0,212.51594594594596,9271.0
+jbshield-gemma-phase2-gemma-3-27b-it,gemma-3-27b-it,user_prompt,subsequence,6855,0,218.4802334062728,4.0,9262.0,227.4802334062728,9271.0
+jbshield-gemma-phase2-gemma-3-27b-it,gemma-3-27b-it,user_prompt,whole_sequence_fallback,545,0,24.295412844036697,13.0,152.0,24.295412844036697,152.0
+jbshield-gemma-phase2-gemma-3-4b-it,gemma-3-4b-it,last_input_token,last_input_token,7400,0,1.0,1.0,1.0,212.51594594594596,9271.0
+jbshield-gemma-phase2-gemma-3-4b-it,gemma-3-4b-it,user_prompt,subsequence,6855,0,218.4802334062728,4.0,9262.0,227.4802334062728,9271.0
+jbshield-gemma-phase2-gemma-3-4b-it,gemma-3-4b-it,user_prompt,whole_sequence_fallback,545,0,24.295412844036697,13.0,152.0,24.295412844036697,152.0
+jbshield-gemma-phase2-gemma-4-12b-it,gemma-4-12b-it,last_input_token,last_input_token,7400,0,1.0,1.0,1.0,216.54945945945946,9275.0
+jbshield-gemma-phase2-gemma-4-12b-it,gemma-4-12b-it,user_prompt,subsequence,6855,0,218.5164113785558,4.0,9262.0,231.5164113785558,9275.0
+jbshield-gemma-phase2-gemma-4-12b-it,gemma-4-12b-it,user_prompt,whole_sequence_fallback,545,0,28.295412844036697,17.0,156.0,28.295412844036697,156.0
