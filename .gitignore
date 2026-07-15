@@ -9,5 +9,8 @@ representations/
 .venv/
 nohup.out
 
+# logs
+logs/
+
 # results
 vectors/
