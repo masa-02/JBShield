@@ -8,3 +8,6 @@ representations/
 .venv
 .venv/
 nohup.out
+
+# results
+vectors/
