@@ -1,8 +1,8 @@
 # JBShield Remote Analysis Summary
 
-- Phase2 runs: 7
+- Phase2 runs: 9
 - Result summaries: 9
-- Artifact size scanned: 43120.449 MB
+- Artifact size scanned: 58446.958 MB
 - Hidden tensor layer analysis: enabled
 - Behavior label alignment: not provided
 - CSV export: enabled
@@ -28,6 +28,8 @@ jbshield-qwen-phase2-qwen2.5-14b-instruct qwen2.5-14b-instruct             True 
 jbshield-qwen-phase2-qwen2.5-32b-instruct qwen2.5-32b-instruct             True         7400           12500        4697.266         4697.266
           jbshield-qwen-phase2-qwen2.5-7b           qwen2.5-7b             True         7400           12500        1466.992         1466.992
  jbshield-qwen-phase2-qwen2.5-7b-instruct  qwen2.5-7b-instruct             True         7400           12500        1466.992         1466.992
+           jbshield-qwen-phase2-qwen3-14b            qwen3-14b             True         7400           12500        2962.891         2962.891
+           jbshield-qwen-phase2-qwen3-32b            qwen3-32b             True         7400           12500        4697.266         4697.266
             jbshield-qwen-phase2-qwen3-8b             qwen3-8b             True         7400           12500        2139.063         2139.063
 ```
 
@@ -36,13 +38,13 @@ jbshield-qwen-phase2-qwen2.5-32b-instruct qwen2.5-32b-instruct             True 
 ```text
                                    run_id           model_name  status  accuracy       f1  num_samples
          jbshield-qwen-phase2-qwen2.5-14b          qwen2.5-14b success   0.35704 0.053022      12500.0
-jbshield-qwen-phase2-qwen2.5-14b-instruct qwen2.5-14b-instruct  failed       NaN      NaN          NaN
+jbshield-qwen-phase2-qwen2.5-14b-instruct qwen2.5-14b-instruct success   0.78352 0.797273      12500.0
          jbshield-qwen-phase2-qwen2.5-32b          qwen2.5-32b success   0.38336 0.005419      12500.0
 jbshield-qwen-phase2-qwen2.5-32b-instruct qwen2.5-32b-instruct success   0.84408 0.845990      12500.0
           jbshield-qwen-phase2-qwen2.5-7b           qwen2.5-7b success   0.34424 0.006063      12500.0
  jbshield-qwen-phase2-qwen2.5-7b-instruct  qwen2.5-7b-instruct success   0.89688 0.905032      12500.0
-           jbshield-qwen-phase2-qwen3-14b            qwen3-14b  failed       NaN      NaN          NaN
-           jbshield-qwen-phase2-qwen3-32b            qwen3-32b  failed       NaN      NaN          NaN
+           jbshield-qwen-phase2-qwen3-14b            qwen3-14b success   0.86240 0.878394      12500.0
+           jbshield-qwen-phase2-qwen3-32b            qwen3-32b success   0.91488 0.921348      12500.0
             jbshield-qwen-phase2-qwen3-8b             qwen3-8b  failed       NaN      NaN          NaN
 ```
 

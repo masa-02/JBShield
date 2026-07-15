@@ -11,5 +11,9 @@ jbshield-qwen-phase2-qwen2.5-7b,qwen2.5-7b,last_input_token,last_input_token,740
 jbshield-qwen-phase2-qwen2.5-7b,qwen2.5-7b,user_prompt,subsequence,7400,0,198.50702702702702,3.0,8649.0,198.50702702702702,8649.0
 jbshield-qwen-phase2-qwen2.5-7b-instruct,qwen2.5-7b-instruct,last_input_token,last_input_token,7400,0,1.0,1.0,1.0,227.50702702702702,8678.0
 jbshield-qwen-phase2-qwen2.5-7b-instruct,qwen2.5-7b-instruct,user_prompt,subsequence,7400,0,198.50702702702702,3.0,8649.0,227.50702702702702,8678.0
+jbshield-qwen-phase2-qwen3-14b,qwen3-14b,last_input_token,last_input_token,7400,0,1.0,1.0,1.0,206.50702702702702,8657.0
+jbshield-qwen-phase2-qwen3-14b,qwen3-14b,user_prompt,subsequence,7400,0,198.50702702702702,3.0,8649.0,206.50702702702702,8657.0
+jbshield-qwen-phase2-qwen3-32b,qwen3-32b,last_input_token,last_input_token,7400,0,1.0,1.0,1.0,206.50702702702702,8657.0
+jbshield-qwen-phase2-qwen3-32b,qwen3-32b,user_prompt,subsequence,7400,0,198.50702702702702,3.0,8649.0,206.50702702702702,8657.0
 jbshield-qwen-phase2-qwen3-8b,qwen3-8b,last_input_token,last_input_token,7400,0,1.0,1.0,1.0,206.50702702702702,8657.0
 jbshield-qwen-phase2-qwen3-8b,qwen3-8b,user_prompt,subsequence,7400,0,198.50702702702702,3.0,8649.0,206.50702702702702,8657.0
